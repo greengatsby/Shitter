@@ -37,7 +37,7 @@ export default function V0TestPage() {
       // v0 API returns the generated code in the response
       setResponse(JSON.stringify(data, null, 2))
     } catch (err) {
-      setError(err.message)
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error calling V0 API:', error)
     return NextResponse.json(
-      { error: 'Failed to generate code', details: error.message }, 
+      { error: 'Failed to generate code', details: error instanceof Error ? error.message : 'Unknown error' }, 
       { status: 500 }
     )
   }
