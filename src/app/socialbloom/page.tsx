@@ -33,7 +33,7 @@ export default function SocialBloomPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-white">
+    <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900 text-white dark">
       {/* Header */}
       <header className="fixed w-full z-50 bg-gray-950/80 backdrop-blur-lg border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -139,7 +139,7 @@ export default function SocialBloomPage() {
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
               Transform Your Brand with <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">Data-Driven</span> Marketing
             </h1>
-            <p className="text-xl text-white/80 mb-8 max-w-3xl mx-auto">
+            <p className="text-xl text-gray-200 mb-8 max-w-3xl mx-auto">
               We combine creativity with analytics to deliver marketing strategies that drive measurable results and exceptional ROI for forward-thinking businesses.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
@@ -147,7 +147,7 @@ export default function SocialBloomPage() {
                 Get Free Consultation
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <Button size="lg" variant="outline" className="border-white/20 text-white hover:bg-white/10">
+              <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/20 hover:text-white">
                 View Case Studies
               </Button>
             </div>
@@ -158,19 +158,19 @@ export default function SocialBloomPage() {
             <Card className="bg-white/5 backdrop-blur-lg border border-white/10 text-center">
               <CardContent className="pt-8 pb-8">
                 <div className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">$2.4M+</div>
-                <p className="text-white/70">Revenue Generated for Clients</p>
+                <p className="text-gray-300">Revenue Generated for Clients</p>
               </CardContent>
             </Card>
             <Card className="bg-white/5 backdrop-blur-lg border border-white/10 text-center">
               <CardContent className="pt-8 pb-8">
                 <div className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">150+</div>
-                <p className="text-white/70">Satisfied Clients</p>
+                <p className="text-gray-300">Satisfied Clients</p>
               </CardContent>
             </Card>
             <Card className="bg-white/5 backdrop-blur-lg border border-white/10 text-center">
               <CardContent className="pt-8 pb-8">
                 <div className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600">300%</div>
-                <p className="text-white/70">Average ROI</p>
+                <p className="text-gray-300">Average ROI</p>
               </CardContent>
             </Card>
           </div>
@@ -181,7 +181,7 @@ export default function SocialBloomPage() {
       <section id="services" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Our Premium Services</h2>
-          <p className="text-xl text-white/70 max-w-2xl mx-auto">
+          <p className="text-xl text-gray-200 max-w-2xl mx-auto">
             Comprehensive marketing solutions designed to elevate your brand and drive measurable results.
           </p>
         </div>
@@ -194,12 +194,12 @@ export default function SocialBloomPage() {
                 <Zap size={28} className="text-white" />
               </div>
               <CardTitle className="text-2xl">Social Media Marketing</CardTitle>
-              <CardDescription className="text-white/70">
+              <CardDescription className="text-gray-300">
                 Strategic content creation and community management that builds brand awareness and drives engagement across all platforms.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2 text-white/80">
+              <ul className="space-y-2 text-gray-200">
                 <li className="flex items-center">
                   <span className="w-2 h-2 bg-purple-500 rounded-full mr-3"></span>
                   Content Strategy & Creation
@@ -223,12 +223,12 @@ export default function SocialBloomPage() {
                 <BarChart3 size={28} className="text-white" />
               </div>
               <CardTitle className="text-2xl">Paid Advertising</CardTitle>
-              <CardDescription className="text-white/70">
+              <CardDescription className="text-gray-300">
                 Data-driven ad campaigns that target your ideal customers with precision, maximizing your return on ad spend.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2 text-white/80">
+              <ul className="space-y-2 text-gray-200">
                 <li className="flex items-center">
                   <span className="w-2 h-2 bg-pink-500 rounded-full mr-3"></span>
                   PPC & Social Media Ads
@@ -252,12 +252,12 @@ export default function SocialBloomPage() {
                 <TrendingUp size={28} className="text-white" />
               </div>
               <CardTitle className="text-2xl">Conversion Optimization</CardTitle>
-              <CardDescription className="text-white/70">
+              <CardDescription className="text-gray-300">
                 Data-driven strategies to maximize your website's conversion potential and turn visitors into customers.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2 text-white/80">
+              <ul className="space-y-2 text-gray-200">
                 <li className="flex items-center">
                   <span className="w-2 h-2 bg-cyan-500 rounded-full mr-3"></span>
                   Landing Page Optimization
@@ -280,7 +280,7 @@ export default function SocialBloomPage() {
       <section id="case-studies" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Success Stories</h2>
-          <p className="text-xl text-white/70">Real results from real clients</p>
+          <p className="text-xl text-gray-200">Real results from real clients</p>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -292,24 +292,24 @@ export default function SocialBloomPage() {
                 </div>
                 <div>
                   <CardTitle className="text-white">TechCorp Solutions</CardTitle>
-                  <CardDescription className="text-white/70">B2B Software Company</CardDescription>
+                  <CardDescription className="text-gray-300">B2B Software Company</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <p className="text-white/80">
+                <p className="text-gray-200">
                   Increased qualified leads by 180% and reduced cost per acquisition by 45% 
                   through targeted LinkedIn campaigns and conversion optimization.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
                     <div className="text-2xl font-bold text-blue-400">180%</div>
-                    <div className="text-sm text-white/60">Lead Increase</div>
+                    <div className="text-sm text-gray-400">Lead Increase</div>
                   </div>
                   <div className="text-center p-4 bg-green-500/10 rounded-lg border border-green-500/20">
                     <div className="text-2xl font-bold text-green-400">45%</div>
-                    <div className="text-sm text-white/60">Lower CAC</div>
+                    <div className="text-sm text-gray-400">Lower CAC</div>
                   </div>
                 </div>
               </div>
@@ -324,24 +324,24 @@ export default function SocialBloomPage() {
                 </div>
                 <div>
                   <CardTitle className="text-white">RetailFashion Co.</CardTitle>
-                  <CardDescription className="text-white/70">E-commerce Fashion Brand</CardDescription>
+                  <CardDescription className="text-gray-300">E-commerce Fashion Brand</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <p className="text-white/80">
+                <p className="text-gray-200">
                   Scaled monthly revenue from $50K to $200K in 6 months through strategic 
                   social media campaigns and influencer partnerships.
                 </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
                     <div className="text-2xl font-bold text-purple-400">300%</div>
-                    <div className="text-sm text-white/60">Revenue Growth</div>
+                    <div className="text-sm text-gray-400">Revenue Growth</div>
                   </div>
                   <div className="text-center p-4 bg-orange-500/10 rounded-lg border border-orange-500/20">
                     <div className="text-2xl font-bold text-orange-400">6</div>
-                    <div className="text-sm text-white/60">Months</div>
+                    <div className="text-sm text-gray-400">Months</div>
                   </div>
                 </div>
               </div>
@@ -354,7 +354,7 @@ export default function SocialBloomPage() {
       <section id="testimonials" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">What Our Clients Say</h2>
-          <p className="text-xl text-white/70">Don't just take our word for it</p>
+          <p className="text-xl text-gray-200">Don't just take our word for it</p>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -386,10 +386,10 @@ export default function SocialBloomPage() {
                       <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
                     ))}
                   </div>
-                  <p className="text-white/80 italic">"{testimonial.content}"</p>
+                  <p className="text-gray-200 italic">"{testimonial.content}"</p>
                   <div className="pt-4 border-t border-white/10">
                     <div className="font-semibold text-white">{testimonial.name}</div>
-                    <div className="text-sm text-white/60">{testimonial.role}</div>
+                    <div className="text-sm text-gray-400">{testimonial.role}</div>
                   </div>
                 </div>
               </CardContent>
@@ -402,7 +402,7 @@ export default function SocialBloomPage() {
       <section id="faq" className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Frequently Asked Questions</h2>
-          <p className="text-xl text-white/70">Everything you need to know about our services</p>
+          <p className="text-xl text-gray-200">Everything you need to know about our services</p>
         </div>
         
         <div className="max-w-3xl mx-auto space-y-4">
@@ -439,7 +439,7 @@ export default function SocialBloomPage() {
               </button>
               {openFAQ === index && (
                 <div className="p-6 bg-white/5 backdrop-blur-lg border border-white/10 rounded-lg">
-                  <p className="text-white/80">{faq.answer}</p>
+                  <p className="text-gray-200">{faq.answer}</p>
                 </div>
               )}
             </div>
@@ -458,7 +458,7 @@ export default function SocialBloomPage() {
         
         <div className="max-w-4xl mx-auto text-center relative z-10">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-6">Ready to Transform Your Marketing?</h2>
-          <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
+          <p className="text-xl text-gray-200 mb-8 max-w-2xl mx-auto">
             Book a free 30-minute consultation with our team to discuss your goals and how we can help you achieve them.
           </p>
           
@@ -466,7 +466,7 @@ export default function SocialBloomPage() {
             <form className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-white/80 mb-2">
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-200 mb-2">
                     Full Name
                   </label>
                   <input
@@ -477,7 +477,7 @@ export default function SocialBloomPage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-white/80 mb-2">
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-200 mb-2">
                     Email Address
                   </label>
                   <input
@@ -489,7 +489,7 @@ export default function SocialBloomPage() {
                 </div>
               </div>
               <div>
-                <label htmlFor="company" className="block text-sm font-medium text-white/80 mb-2">
+                <label htmlFor="company" className="block text-sm font-medium text-gray-200 mb-2">
                   Company Name
                 </label>
                 <input
@@ -500,7 +500,7 @@ export default function SocialBloomPage() {
                 />
               </div>
               <div>
-                <label htmlFor="message" className="block text-sm font-medium text-white/80 mb-2">
+                <label htmlFor="message" className="block text-sm font-medium text-gray-200 mb-2">
                   How can we help?
                 </label>
                 <textarea
@@ -534,7 +534,7 @@ export default function SocialBloomPage() {
                   SocialBloom
                 </span>
               </Link>
-              <p className="text-white/60 mb-6">
+              <p className="text-gray-400 mb-6">
                 Premium marketing solutions for brands that want to stand out and drive measurable results.
               </p>
             </div>
@@ -542,29 +542,29 @@ export default function SocialBloomPage() {
             <div>
               <h3 className="text-lg font-semibold mb-4">Services</h3>
               <ul className="space-y-3">
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Social Media Marketing</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Paid Advertising</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Conversion Optimization</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Content Creation</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Analytics & Reporting</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Social Media Marketing</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Paid Advertising</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Conversion Optimization</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Content Creation</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Analytics & Reporting</a></li>
               </ul>
             </div>
             
             <div>
               <h3 className="text-lg font-semibold mb-4">Company</h3>
               <ul className="space-y-3">
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">About Us</a></li>
-                <li><a href="#case-studies" className="text-white/60 hover:text-white transition-colors">Case Studies</a></li>
-                <li><a href="#testimonials" className="text-white/60 hover:text-white transition-colors">Testimonials</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Careers</a></li>
-                <li><a href="#" className="text-white/60 hover:text-white transition-colors">Contact</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">About Us</a></li>
+                <li><a href="#case-studies" className="text-gray-300 hover:text-white transition-colors">Case Studies</a></li>
+                <li><a href="#testimonials" className="text-gray-300 hover:text-white transition-colors">Testimonials</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Careers</a></li>
+                <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Contact</a></li>
               </ul>
             </div>
             
             <div>
               <h3 className="text-lg font-semibold mb-4">Contact</h3>
               <ul className="space-y-3">
-                <li className="text-white/60">123 Marketing St, Suite 100</li>
+                <li className="text-gray-300">123 Marketing St, Suite 100</li>
                 <li className="text-white/60">San Francisco, CA 94103</li>
                 <li className="text-white/60">hello@socialbloom.com</li>
                 <li className="text-white/60">(555) 123-4567</li>
