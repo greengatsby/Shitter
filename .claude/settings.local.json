@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(npm run dev:*)",
+      "Bash(claude --version)",
+      "Bash(claude -p \"Please create a folder inside of the components folder for landing page\" --output-format json)",
+      "WebFetch(domain:www.gsb.stanford.edu)",
+      "Bash(env FIRECRAWL_API_KEY=fc-2f16dd6512754bcea54c57f9c5fe76f7 npx -y firecrawl-mcp)",
+      "WebFetch(domain:profiles.stanford.edu)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:mcp.so)",
+      "Bash(npx:*)",
+      "Bash(ls:*)",
+      "Bash(claude mcp:*)",
+      "mcp__puppeteer__puppeteer_screenshot",
+      "Bash(mkdir:*)",
+      "mcp__puppeteer__puppeteer_evaluate",
+      "mcp__puppeteer__puppeteer_navigate",
+      "WebFetch(domain:www.socialbloom.io)",
+      "Bash(node test-v0.js)",
+      "WebFetch(domain:vercel.com)",
+      "Bash(rm:*)",
+      "Bash(npm install:*)",
+      "Bash(git reset:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}
