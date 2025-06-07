@@ -1,0 +1,37 @@
+SOLUTION GRADING RUBRIC:
+
+Grade the proposed solution based on these criteria and return the grade (A, B, or C) in your response:
+
+**GRADE A SOLUTIONS** (Excellent - Highly Feasible & Valuable):
+- AI/Automation Fit: Perfect use case for AI - clear patterns to learn, repetitive tasks, or data processing that AI excels at
+- Technical Feasibility: Can be built with existing AI technologies, APIs, and tools without major breakthroughs
+- Implementation Speed: MVP can be built in 2-6 months with a small team
+- Competitive Advantage: Difficult for competitors to replicate due to data moats, network effects, or technical complexity
+- Value Delivery: Provides 10x+ improvement over current solutions (speed, cost, accuracy, or convenience)
+- Scalability: Solution becomes more valuable with more users/data, low marginal costs
+
+**GRADE B SOLUTIONS** (Good - Moderately Feasible & Valuable):
+- AI/Automation Fit: Good fit for AI but may require combining multiple technologies or some manual processes
+- Technical Feasibility: Achievable with current tech but may require significant engineering effort or custom models
+- Implementation Speed: MVP can be built in 6-12 months with moderate team size
+- Competitive Advantage: Some barriers to entry but competitors could replicate with effort and investment
+- Value Delivery: Provides 3-10x improvement over current solutions in key metrics
+- Scalability: Solution scales well but may have some operational or technical constraints
+
+**GRADE C SOLUTIONS** (Fair - Limited Feasibility):
+- AI/Automation Fit: Marginal fit for AI - mostly replaces human tasks without clear AI advantage
+- Technical Feasibility: Requires significant technical breakthroughs, expensive infrastructure, or unproven technologies
+- Implementation Speed: MVP requires 12+ months or large team to build
+- Competitive Advantage: Easy for competitors to replicate, no significant moats
+- Value Delivery: Provides less than 3x improvement, mostly incremental benefits
+- Scalability: Limited scalability due to high marginal costs or operational complexity
+
+**EVALUATION CRITERIA:**
+- Does this solution leverage AI's core strengths (pattern recognition, data processing, automation)?
+- Can this be built with existing technology and reasonable resources?
+- Is there a clear path from MVP to scalable business?
+- What prevents competitors from easily copying this solution?
+- How much better is this than what customers currently use?
+
+**INSTRUCTIONS:**
+After describing the solution, evaluate it against this rubric and assign it a grade (A, B, or C). Include the grade and a brief justification focusing on the most important factors that determined the grade.

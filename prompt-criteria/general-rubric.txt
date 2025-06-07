@@ -1,0 +1,38 @@
+BUSINESS VIABILITY GRADING RUBRIC:
+
+Grade the overall business viability based on these criteria and return the grade (A, B, or C) in your response:
+
+**GRADE A BUSINESS VIABILITY** (Excellent - High Success Potential):
+- Market Size: $500M+ TAM with clear growth trajectory and multiple customer segments
+- Revenue Model: Multiple revenue streams, strong recurring revenue potential ($1000+/month ARPU)
+- Competitive Advantage: Strong moats (network effects, data advantages, switching costs, patents)
+- Implementation Timeline: MVP achievable in 2-4 months with proven technology stack
+- Investment Requirements: <$50K needed to reach profitability, mostly development costs
+- Scalability: Unit economics improve significantly with scale, low marginal costs
+
+**GRADE B BUSINESS VIABILITY** (Good - Moderate Success Potential):
+- Market Size: $100-500M TAM with steady growth, well-defined target market
+- Revenue Model: Clear recurring revenue model with $300-1000/month ARPU potential
+- Competitive Advantage: Some barriers to entry, differentiated approach or execution advantages
+- Implementation Timeline: MVP achievable in 4-8 months using existing tools and APIs
+- Investment Requirements: $50-200K needed, may require some infrastructure or team growth
+- Scalability: Good unit economics, manageable operational scaling challenges
+
+**GRADE C BUSINESS VIABILITY** (Fair - Limited Success Potential):
+- Market Size: <$100M TAM or declining market, niche customer base
+- Revenue Model: Unclear recurring revenue, low ARPU (<$300/month), transaction-based
+- Competitive Advantage: Limited moats, easy for competitors to replicate
+- Implementation Timeline: >8 months to MVP, requires significant technical innovation
+- Investment Requirements: >$200K needed, high operational costs or complex infrastructure
+- Scalability: Challenging unit economics, high marginal costs or manual scaling required
+
+**EVALUATION FACTORS:**
+- How large and accessible is the target market?
+- What's the realistic revenue per customer and retention rate?
+- How defensible is this business against competition?
+- How quickly can this be built and brought to market?
+- What level of investment is required to reach sustainability?
+- How well does this business scale with growth?
+
+**INSTRUCTIONS:**
+After outlining the complete business idea, evaluate its overall viability against this rubric and assign it a grade (A, B, or C). Include the grade and a brief justification focusing on the most critical success factors.

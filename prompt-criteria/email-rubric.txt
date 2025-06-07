@@ -1,0 +1,37 @@
+EMAIL STRATEGY GRADING RUBRIC:
+
+Grade the email/outreach strategy based on these criteria and return the grade (A, B, or C) in your response:
+
+**GRADE A EMAIL STRATEGIES** (Excellent - Highly Effective & Scalable):
+- Lead Magnet Quality: Provides immediate, valuable solution that prospects would normally pay $100+ for
+- Automation Potential: 90%+ of outreach process can be automated (prospect identification, email generation, follow-up)
+- Personalization: Can create highly personalized emails using scraped data/signals with minimal manual effort
+- Value Delivery Speed: Lead magnet can be delivered instantly upon signup with no human intervention
+- Cost Structure: Marginal cost per lead magnet delivery is near zero (digital products, API calls, automated reports)
+- Conversion Funnel: Clear path from free lead magnet to paid solution with logical upsells
+
+**GRADE B EMAIL STRATEGIES** (Good - Moderately Effective):
+- Lead Magnet Quality: Provides valuable solution worth $25-100 to prospects
+- Automation Potential: 70-90% automated, may require some manual review or customization
+- Personalization: Can personalize using available data but may need some template customization
+- Value Delivery Speed: Lead magnet delivered within 24 hours with minimal manual processing
+- Cost Structure: Low marginal costs, mostly automated with some operational overhead
+- Conversion Funnel: Good progression from free to paid but may need nurture sequences
+
+**GRADE C EMAIL STRATEGIES** (Fair - Limited Effectiveness):
+- Lead Magnet Quality: Basic value proposition, worth less than $25 or easily replicated
+- Automation Potential: Less than 70% automated, requires significant manual work per prospect
+- Personalization: Limited personalization, mostly generic outreach templates
+- Value Delivery Speed: Manual delivery required, takes days to fulfill lead magnet
+- Cost Structure: High marginal costs due to manual processes or expensive data sources
+- Conversion Funnel: Unclear path from lead magnet to paid solution
+
+**EVALUATION CRITERIA:**
+- How valuable is the lead magnet to prospects?
+- What percentage of the outreach process can be automated?
+- How personalized can emails be using available data?
+- How quickly can value be delivered to new leads?
+- What are the marginal costs of acquiring and nurturing each lead?
+
+**INSTRUCTIONS:**
+After describing the outreach strategy, evaluate it against this rubric and assign it a grade (A, B, or C). Include the grade and a brief justification.

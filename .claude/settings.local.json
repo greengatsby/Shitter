@@ -33,7 +33,16 @@
       "Bash(git checkout:*)",
       "Bash(git remote:*)",
       "Bash(vercel:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "mcp__puppeteer__puppeteer_click",
+      "mcp__puppeteer__puppeteer_fill",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__apply_migration",
+      "Bash(mv:*)",
+      "Bash(grep:*)",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__execute_sql",
+      "Bash(find:*)"
     ],
     "deny": []
   }

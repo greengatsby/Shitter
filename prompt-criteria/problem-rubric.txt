@@ -1,0 +1,35 @@
+PROBLEM GRADING RUBRIC:
+
+Grade the identified problem based on these criteria and return the grade (A, B, or C) in your response:
+
+**GRADE A PROBLEMS** (Excellent - Highly Scalable & Detectable):
+- Digital Detectability: Problem creates multiple, clear digital footprints that are easily scraped/monitored (job postings, support tickets, social media complaints, app reviews, website changes)
+- Signal Strength: Very specific, unambiguous indicators (e.g., "posts job for DevOps engineer", "receives negative reviews mentioning 'slow loading'")
+- Automation Potential: Can be detected with 90%+ accuracy using existing APIs/scraping tools
+- Market Size: Affects thousands of businesses with clear willingness to pay $500+/month
+- Urgency: Problem causes immediate business impact (lost revenue, compliance issues, operational downtime)
+- Current Solutions: Expensive ($5K+), manual, or demonstrably ineffective
+
+**GRADE B PROBLEMS** (Good - Moderately Scalable & Detectable):
+- Digital Detectability: Problem leaves some digital traces but may require combining multiple signals
+- Signal Strength: Reasonably clear indicators but may need interpretation (e.g., "hiring spike in customer service", "mentions integration challenges")
+- Automation Potential: Can be detected with 70-90% accuracy, may require some manual validation
+- Market Size: Affects hundreds of businesses willing to pay $100-500/month
+- Urgency: Problem causes noticeable friction but not immediate crisis
+- Current Solutions: Moderately expensive ($1-5K), time-consuming, or partially effective
+
+**GRADE C PROBLEMS** (Fair - Limited Scalability):
+- Digital Detectability: Minimal digital footprints, mostly requires manual research
+- Signal Strength: Vague or indirect indicators that need significant interpretation
+- Automation Potential: Less than 70% detection accuracy, heavily manual process required
+- Market Size: Affects smaller number of businesses or low willingness to pay (<$100/month)
+- Urgency: Nice-to-have problem without immediate consequences
+- Current Solutions: Cheap, adequate existing solutions or DIY approaches work fine
+
+**REQUIREMENTS FOR ALL GRADES:**
+- Must be B2B focused (business problems, not consumer)
+- Must have potential for AI/automation to improve current solutions
+- Must be specific enough to build a focused solution around
+
+**INSTRUCTIONS:**
+After generating the business idea, evaluate the problem against this rubric and assign it a grade (A, B, or C). Include the grade and a brief justification in your response.
