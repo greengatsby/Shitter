@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { IdeaEditor } from '@/components/IdeaEditor';
-import { Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Loader2, ArrowLeft, AlertTriangle, Building2 } from 'lucide-react';
 
 interface Idea {
   id: string;
@@ -34,15 +34,16 @@ export default function IdeaDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [idea, setIdea] = useState<Idea | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [buildingCompanies, setBuildingCompanies] = useState(false);
 
   const fetchIdea = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const res = await fetch(`/api/ideas/${params.id}`);
       const data: IdeaResponse = await res.json();
-      
+
       if (data.success && data.idea) {
         setIdea(data.idea);
       } else {
@@ -63,6 +64,35 @@ export default function IdeaDetailsPage() {
 
   const handleIdeaSave = (updatedIdea: Idea) => {
     setIdea(updatedIdea);
+  };
+
+  const handleBuildCompanyList = async () => {
+    setBuildingCompanies(true);
+    try {
+      const response = await fetch('/api/build-company-list', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ideaId: idea?.id,
+          ideaData: idea
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Show success message or update UI
+        console.log('Company list built successfully:', result);
+      } else {
+        console.error('Failed to build company list:', result.error);
+      }
+    } catch (error) {
+      console.error('Error building company list:', error);
+    } finally {
+      setBuildingCompanies(false);
+    }
   };
 
   if (loading) {
@@ -123,19 +153,39 @@ export default function IdeaDetailsPage() {
     <div className="min-h-screen bg-white dark:bg-gray-950">
       <div className="max-w-6xl mx-auto px-6 py-16">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-8">
-          <Button
-            onClick={() => router.push('/ideas')}
-            variant="outline"
-            size="sm"
-            className="rounded-lg"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Ideas
-          </Button>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            ID: {idea.id}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => router.push('/ideas')}
+              variant="outline"
+              size="sm"
+              className="rounded-lg"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Ideas
+            </Button>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              ID: {idea.id}
+            </div>
           </div>
+
+          <Button
+            onClick={handleBuildCompanyList}
+            disabled={buildingCompanies}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {buildingCompanies ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Building Company List...
+              </>
+            ) : (
+              <>
+                <Building2 className="h-4 w-4 mr-2" />
+                Build Company List
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Idea Editor */}
