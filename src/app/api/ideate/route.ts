@@ -148,6 +148,16 @@ function calculateCategoryScores(detailedScores: any): Record<string, CategorySc
 
 export async function POST(request: NextRequest) {
   try {
+    // Fetch existing ideas from database
+    const { data: existingIdeas, error: ideasError } = await supabase
+      .from('ideas')
+      .select('title')
+      .order('created_at', { ascending: false });
+
+    if (ideasError) {
+      console.error('Error fetching existing ideas:', ideasError);
+    }
+
     // Fetch rubrics from database
     const rubricsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/rubrics?include_fields=true&include_levels=true`);
     const rubricsData = await rubricsResponse.json();
@@ -162,10 +172,16 @@ export async function POST(request: NextRequest) {
     // Generate dynamic JSON structure from database
     const dynamicJSONStructure = generateDynamicJSONStructure(rubricsData.categories);
 
+    // Build existing ideas context
+    let existingIdeasContext = '';
+    if (existingIdeas && existingIdeas.length > 0) {
+      existingIdeasContext = `\n\nEXISTING IDEAS TO AVOID DUPLICATING:\n${existingIdeas.map(idea => `- ${idea.title}`).join('\n')}\n\nIMPORTANT: Do NOT generate ideas that are similar to or duplicate any of the existing ideas listed above. Create something genuinely different and novel.\n`;
+    }
+
     // Build the prompt
     const prompt = `Your job is to generate an AI software business idea and score it using detailed rubrics.
 
-${rubricPrompt}
+${rubricPrompt}${existingIdeasContext}
 
 Generate a business idea and respond with ONLY a JSON object that has these exact fields:
 

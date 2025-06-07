@@ -79,7 +79,7 @@ export default function IdeasPage() {
     try {
       const res = await fetch('/api/rubrics?include_fields=true&include_levels=true');
       const data = await res.json();
-      
+
       if (data.success) {
         setRubrics(data.categories || []);
       }
@@ -113,14 +113,14 @@ export default function IdeasPage() {
   useEffect(() => {
     // Fetch rubrics first
     fetchRubrics();
-    
+
     // Check if we're generating a new idea
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('generating') === 'true') {
       setGenerating(true);
       // Remove the parameter from URL
       window.history.replaceState({}, '', '/ideas');
-      
+
       // Start polling for new ideas (generation already started from /ideate page)
       pollForNewIdea();
     } else {
@@ -199,7 +199,7 @@ export default function IdeasPage() {
     if (fieldData.levelTitle) {
       return fieldData.levelTitle;
     }
-    
+
     // Legacy fallback for older data
     return `Level ${fieldData.score}`;
   };
@@ -219,31 +219,31 @@ export default function IdeasPage() {
   const renderDetailedScore = (categoryData: any, categoryName: string) => {
     if (!categoryData) return null;
 
-    const scoreFields = Object.keys(categoryData).filter(key => 
-      categoryData[key] && 
-      typeof categoryData[key] === 'object' && 
-      'score' in categoryData[key] && 
+    const scoreFields = Object.keys(categoryData).filter(key =>
+      categoryData[key] &&
+      typeof categoryData[key] === 'object' &&
+      'score' in categoryData[key] &&
       'justification' in categoryData[key]
     );
 
     if (scoreFields.length === 0) return null;
 
     return (
-      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 overflow-visible">
+      <div className="overflow-visible">
         <div className="flex flex-wrap gap-2 overflow-visible">
           {scoreFields.map((fieldName) => {
             const fieldData = categoryData[fieldName];
             const levelTitle = getLevelTitle(fieldData);
-            
+
             return (
               <div key={fieldName} className="relative group">
-                <Badge 
-                  variant="outline" 
+                <Badge
+                  variant="outline"
                   className={`cursor-help text-xs px-2 py-1 ${getLevelColor(fieldData.score)}`}
                 >
                   {levelTitle}
                 </Badge>
-                
+
                 {/* Tooltip */}
                 <div className="absolute bottom-full left-0 mb-2 px-4 py-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] w-80 max-w-sm">
                   <div className="font-medium mb-2">
@@ -411,7 +411,7 @@ export default function IdeasPage() {
                 </span>
               </div>
             </div>
-            
+
             {/* Skeleton Loader */}
             <Card className="border-0 shadow-sm">
               <CardContent className="p-6">
@@ -427,7 +427,7 @@ export default function IdeasPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                   <table className="w-full">
                     <thead className="bg-gray-50 dark:bg-gray-800">
@@ -472,8 +472,16 @@ export default function IdeasPage() {
                         {(() => {
                           const overallGrade = calculateOverallGrade(idea);
                           return overallGrade !== null ? (
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 font-bold text-2xl ${getOverallGradeColor(overallGrade)}`}>
-                              {overallGrade}
+                            <div className="relative group">
+                              <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 font-bold text-2xl cursor-help ${getOverallGradeColor(overallGrade)}`}>
+                                {overallGrade}
+                              </div>
+
+                              {/* Tooltip */}
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] whitespace-nowrap">
+                                Avg of all category grades
+                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45"></div>
+                              </div>
                             </div>
                           ) : (
                             <div className="w-12 h-12 rounded-full flex items-center justify-center border-2 bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500 border-gray-200 dark:border-gray-700 font-bold text-xl">
@@ -539,15 +547,22 @@ export default function IdeasPage() {
                           </td>
                           <td className="px-4 py-3">
                             {idea.problem?.problemGrade ? (
-                              <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                                {idea.problem.problemGrade}
-                              </Badge>
+                              <div className="relative group">
+                                <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 cursor-help">
+                                  {idea.problem.problemGrade}
+                                </Badge>
+                                {idea.problem?.gradeJustification && (
+                                  <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] whitespace-nowrap">
+                                    {idea.problem.gradeJustification}
+                                    <div className="absolute top-full left-6 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45"></div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-gray-400 text-sm">Not graded</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                            <div>{idea.problem?.gradeJustification || 'No justification provided'}</div>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 align-middle">
                             {renderDetailedScore(idea.problem, 'Problem')}
                           </td>
                         </tr>
@@ -559,15 +574,22 @@ export default function IdeasPage() {
                           </td>
                           <td className="px-4 py-3">
                             {idea.solution?.solutionGrade ? (
-                              <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                                {idea.solution.solutionGrade}
-                              </Badge>
+                              <div className="relative group">
+                                <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 cursor-help">
+                                  {idea.solution.solutionGrade}
+                                </Badge>
+                                {idea.solution?.gradeJustification && (
+                                  <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] whitespace-nowrap">
+                                    {idea.solution.gradeJustification}
+                                    <div className="absolute top-full left-6 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45"></div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-gray-400 text-sm">Not graded</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                            <div>{idea.solution?.gradeJustification || 'No justification provided'}</div>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 align-middle">
                             {renderDetailedScore(idea.solution, 'Solution')}
                           </td>
                         </tr>
@@ -579,15 +601,22 @@ export default function IdeasPage() {
                           </td>
                           <td className="px-4 py-3">
                             {idea.outreach?.emailGrade ? (
-                              <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                                {idea.outreach.emailGrade}
-                              </Badge>
+                              <div className="relative group">
+                                <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 cursor-help">
+                                  {idea.outreach.emailGrade}
+                                </Badge>
+                                {idea.outreach?.emailGradeJustification && (
+                                  <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] whitespace-nowrap">
+                                    {idea.outreach.emailGradeJustification}
+                                    <div className="absolute top-full left-6 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45"></div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-gray-400 text-sm">Not graded</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                            <div>{idea.outreach?.emailGradeJustification || 'No justification provided'}</div>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 align-middle">
                             {renderDetailedScore(idea.outreach, 'Email Strategy')}
                           </td>
                         </tr>
@@ -599,15 +628,22 @@ export default function IdeasPage() {
                           </td>
                           <td className="px-4 py-3">
                             {idea.market?.viabilityGrade ? (
-                              <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                                {idea.market.viabilityGrade}
-                              </Badge>
+                              <div className="relative group">
+                                <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 cursor-help">
+                                  {idea.market.viabilityGrade}
+                                </Badge>
+                                {idea.market?.viabilityGradeJustification && (
+                                  <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[9999] whitespace-nowrap">
+                                    {idea.market.viabilityGradeJustification}
+                                    <div className="absolute top-full left-6 w-2 h-2 bg-gray-900 dark:bg-gray-100 rotate-45"></div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-gray-400 text-sm">Not graded</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                            <div>{idea.market?.viabilityGradeJustification || 'No justification provided'}</div>
+                          <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 align-middle">
                             {renderDetailedScore(idea.market, 'Business Viability')}
                           </td>
                         </tr>

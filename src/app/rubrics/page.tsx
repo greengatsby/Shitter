@@ -51,6 +51,9 @@ export default function RubricsPage() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
   const [editingItem, setEditingItem] = useState<{ type: string; id: string } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: string; id: string; name: string } | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
 
   const fetchRubrics = async () => {
     setLoading(true);
@@ -105,6 +108,88 @@ export default function RubricsPage() {
       'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
     ];
     return colors[level - 1] || colors[0];
+  };
+
+  const handleDelete = async (type: string, id: string) => {
+    try {
+      const response = await fetch(`/api/rubrics/${id}?type=${type}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await fetchRubrics();
+        setShowDeleteConfirm(null);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to delete item');
+      }
+    } catch (err) {
+      setError('Failed to delete item');
+    }
+  };
+
+  const handleEdit = (type: string, id: string) => {
+    let item: any = null;
+    
+    if (type === 'category') {
+      item = categories.find(c => c.id === id);
+    } else if (type === 'field') {
+      for (const category of categories) {
+        item = category.fields?.find(f => f.id === id);
+        if (item) break;
+      }
+    } else if (type === 'level') {
+      for (const category of categories) {
+        for (const field of category.fields || []) {
+          item = field.levels?.find(l => l.id === id);
+          if (item) break;
+        }
+        if (item) break;
+      }
+    }
+
+    if (item) {
+      setEditForm({ ...item });
+      setEditingItem({ type, id });
+    }
+  };
+
+  const handleSave = async () => {
+    if (!editingItem) return;
+    
+    setSaving(true);
+    try {
+      const { id, type, ...formData } = editForm;
+      
+      const response = await fetch(`/api/rubrics/${editingItem.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: editingItem.type,
+          data: formData
+        }),
+      });
+
+      if (response.ok) {
+        await fetchRubrics();
+        setEditingItem(null);
+        setEditForm({});
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to save item');
+      }
+    } catch (err) {
+      setError('Failed to save item');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingItem(null);
+    setEditForm({});
   };
 
   if (loading) {
@@ -186,10 +271,21 @@ export default function RubricsPage() {
                       size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setEditingItem({ type: 'category', id: category.id });
+                        handleEdit('category', category.id);
                       }}
                     >
                       <Edit3 className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteConfirm({ type: 'category', id: category.id, name: category.name });
+                      }}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
@@ -229,10 +325,21 @@ export default function RubricsPage() {
                                 size="sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setEditingItem({ type: 'field', id: field.id });
+                                  handleEdit('field', field.id);
                                 }}
                               >
                                 <Edit3 className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowDeleteConfirm({ type: 'field', id: field.id, name: field.name });
+                                }}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
                           </div>
@@ -254,13 +361,23 @@ export default function RubricsPage() {
                                       {level.description}
                                     </p>
                                   </div>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setEditingItem({ type: 'level', id: level.id })}
-                                  >
-                                    <Edit3 className="h-3 w-3" />
-                                  </Button>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleEdit('level', level.id)}
+                                    >
+                                      <Edit3 className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setShowDeleteConfirm({ type: 'level', id: level.id, name: level.title })}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
                                 </div>
                               ))}
                               <Button
@@ -292,6 +409,172 @@ export default function RubricsPage() {
             </Card>
           ))}
         </div>
+
+        {/* Edit Dialog */}
+        {editingItem && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Edit {editingItem.type}
+              </h3>
+              
+              <div className="space-y-4">
+                {editingItem.type === 'category' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Name
+                      </label>
+                      <Input
+                        value={editForm.name || ''}
+                        onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                        placeholder="Category name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Description
+                      </label>
+                      <Textarea
+                        value={editForm.description || ''}
+                        onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                        placeholder="Category description"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Icon
+                      </label>
+                      <Input
+                        value={editForm.icon || ''}
+                        onChange={(e) => setEditForm({...editForm, icon: e.target.value})}
+                        placeholder="📊"
+                      />
+                    </div>
+                  </>
+                )}
+                
+                {editingItem.type === 'field' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Name
+                      </label>
+                      <Input
+                        value={editForm.name || ''}
+                        onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                        placeholder="Field name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Description
+                      </label>
+                      <Textarea
+                        value={editForm.description || ''}
+                        onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                        placeholder="Field description"
+                      />
+                    </div>
+                  </>
+                )}
+                
+                {editingItem.type === 'level' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Level Number
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="5"
+                        value={editForm.level || ''}
+                        onChange={(e) => setEditForm({...editForm, level: parseInt(e.target.value)})}
+                        placeholder="1-5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Title
+                      </label>
+                      <Input
+                        value={editForm.title || ''}
+                        onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                        placeholder="Level title"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Description
+                      </label>
+                      <Textarea
+                        value={editForm.description || ''}
+                        onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                        placeholder="Level description"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  variant="outline"
+                  onClick={cancelEdit}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Confirm Delete
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Are you sure you want to delete the {showDeleteConfirm.type} "{showDeleteConfirm.name}"? 
+                This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleDelete(showDeleteConfirm.type, showDeleteConfirm.id)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
