@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { IdeaEditor } from '@/components/IdeaEditor';
-import { Loader2, ArrowLeft, AlertTriangle, Building2 } from 'lucide-react';
+import { Loader2, ArrowLeft, AlertTriangle, Building2, Mail } from 'lucide-react';
+import { EmailGenerator } from '@/components/EmailGenerator';
 
 interface Idea {
   id: string;
@@ -35,6 +36,7 @@ export default function IdeaDetailsPage() {
   const [idea, setIdea] = useState<Idea | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buildingCompanies, setBuildingCompanies] = useState(false);
+  const [showEmailGenerator, setShowEmailGenerator] = useState(false);
 
   const fetchIdea = async () => {
     setLoading(true);
@@ -169,29 +171,47 @@ export default function IdeaDetailsPage() {
             </div>
           </div>
 
-          <Button
-            onClick={handleBuildCompanyList}
-            disabled={buildingCompanies}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {buildingCompanies ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Building Company List...
-              </>
-            ) : (
-              <>
-                <Building2 className="h-4 w-4 mr-2" />
-                Build Company List
-              </>
-            )}
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              onClick={handleBuildCompanyList}
+              disabled={buildingCompanies}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {buildingCompanies ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Building Company List...
+                </>
+              ) : (
+                <>
+                  <Building2 className="h-4 w-4 mr-2" />
+                  Build Company List
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={() => setShowEmailGenerator(true)}
+              variant="outline"
+              className="border-green-300 text-green-700 hover:bg-green-50"
+            >
+              <Mail className="h-4 w-4 mr-2" />
+              Generate Email Campaign
+            </Button>
+          </div>
         </div>
 
         {/* Idea Editor */}
         <IdeaEditor
           idea={idea}
           onSave={handleIdeaSave}
+        />
+
+        {/* Email Generator Modal */}
+        <EmailGenerator
+          idea={idea}
+          isOpen={showEmailGenerator}
+          onClose={() => setShowEmailGenerator(false)}
         />
       </div>
     </div>
