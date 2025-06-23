@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { mkdir } from 'fs/promises';
+import { mkdir, writeFile, access } from 'fs/promises';
 import path from 'path';
 
 const execAsync = promisify(exec);
@@ -31,6 +31,62 @@ const createLogger = (sessionId?: string): LogCallback => {
     }
   };
 };
+
+// Create Claude Code permissions settings for the project
+async function ensureClaudePermissions(workingDir: string, log: LogCallback) {
+  try {
+    const claudeDir = path.join(workingDir, '.claude');
+    const settingsFile = path.join(claudeDir, 'settings.local.json');
+    
+    // Check if settings already exist
+    try {
+      await access(settingsFile);
+      log('info', 'Claude permissions already configured');
+      return;
+    } catch {
+      // File doesn't exist, create it
+    }
+    
+    // Create .claude directory
+    await mkdir(claudeDir, { recursive: true });
+    
+    // Define permissions for common development tasks
+    const settings = {
+      permissions: {
+        allow: [
+          "Edit(**)", // Allow editing any file in the project
+          "Read(**)", // Allow reading any file in the project
+          "Bash(npm:*)", // Allow npm commands
+          "Bash(git:*)", // Allow git commands
+          "Bash(mkdir:*)", // Allow creating directories
+          "Bash(ls:*)", // Allow listing directories
+          "Bash(cat:*)", // Allow reading files via cat
+          "Bash(touch:*)", // Allow creating files via touch
+          "Bash(cp:*)", // Allow copying files
+          "Bash(mv:*)", // Allow moving files
+          "Bash(rm:*)", // Allow removing files (be careful!)
+          "Bash(find:*)", // Allow find commands
+          "Bash(grep:*)", // Allow grep commands
+          "Bash(chmod:*)", // Allow changing permissions
+          "Bash(node:*)", // Allow running node
+          "Bash(npx:*)" // Allow npx commands
+        ],
+        deny: [
+          "Bash(curl:*)", // Deny external network requests for security
+          "Bash(wget:*)", // Deny external downloads
+          "Bash(sudo:*)" // Deny sudo commands for security
+        ]
+      }
+    };
+    
+    await writeFile(settingsFile, JSON.stringify(settings, null, 2));
+    log('info', 'Created Claude permissions settings', { settingsFile });
+    
+  } catch (error) {
+    log('warn', 'Failed to create Claude permissions settings', error);
+    // Don't fail the request, just continue
+  }
+}
 
 export async function POST(request: NextRequest) {
   const log = createLogger();
@@ -116,10 +172,13 @@ export async function POST(request: NextRequest) {
     }
     
     // Add the prompt
-    claudeCommand += ` "${escapedPrompt}"`;
+    claudeCommand += ` "${escapedPrompt}. and include in the resp how many tokens used."`;
     
     // Add output format
     claudeCommand += ` --output-format ${outputFormat}`;
+
+     // Pre-authorize common tools for file operations
+    claudeCommand += ` --allowedTools "Edit,Write,Read,Bash(git*),Bash(npm*),Bash(node*)"`;
     
     // Add optional parameters
     if (systemPrompt) {
@@ -152,6 +211,9 @@ export async function POST(request: NextRequest) {
       workingDir: process.cwd()
     });
 
+    // Ensure Claude has proper permissions configured for this project
+    await ensureClaudePermissions(process.cwd(), log);
+
     // Execute the claude command
     const { stdout, stderr } = await execAsync(claudeCommand, {
       cwd: process.cwd(),
@@ -159,6 +221,9 @@ export async function POST(request: NextRequest) {
       maxBuffer: 1024 * 1024 * 10, // 10MB buffer
       timeout: 600000, // 10 minute timeout
     });
+
+    console.log('stdout', stdout);
+    console.log('stderr', stderr);
 
     log('info', 'Claude command completed', { 
       stdoutLength: stdout.length, 
@@ -237,14 +302,16 @@ export async function GET(request: NextRequest) {
     message: 'Claude Code API endpoint with native SDK session support',
     usage: {
       post: 'POST with { prompt: string, outputFormat?: "json" | "text", session_id?: string, continue_conversation?: boolean, systemPrompt?: string, appendSystemPrompt?: string, allowedTools?: string, disallowedTools?: string, maxTurns?: number }',
-      get: 'GET for API information'
+      get: 'GET for API information',
+      put: 'PUT to setup Claude permissions'
     },
     features: {
       session_management: 'Built-in Claude Code SDK session support',
       output_formats: ['json', 'text', 'stream-json'],
       custom_prompts: 'System prompt customization',
       tool_control: 'Allowed/disallowed tools configuration',
-      turn_limits: 'Maximum turns configuration'
+      turn_limits: 'Maximum turns configuration',
+      permission_management: 'Automatic project-level permission setup'
     },
     environment: {
       hasApiKey: !!process.env.ANTHROPIC_API_KEY,
@@ -254,7 +321,55 @@ export async function GET(request: NextRequest) {
       resume_by_id: true,
       continue_recent: true,
       custom_system_prompts: true,
-      tool_filtering: true
+      tool_filtering: true,
+      project_permissions: true
     }
   });
+}
+
+export async function PUT(request: NextRequest) {
+  const log = createLogger();
+  
+  try {
+    const { action } = await request.json();
+    
+    if (action === 'setup-permissions') {
+      log('info', 'Manual permission setup requested');
+      
+      try {
+        await ensureClaudePermissions(process.cwd(), log);
+        
+        return NextResponse.json({
+          success: true,
+          message: 'Claude permissions configured successfully',
+          location: path.join(process.cwd(), '.claude', 'settings.local.json')
+        });
+        
+      } catch (error) {
+        log('error', 'Failed to setup permissions', error);
+        return NextResponse.json(
+          { 
+            error: 'Failed to setup permissions', 
+            details: error instanceof Error ? error.message : 'Unknown error'
+          },
+          { status: 500 }
+        );
+      }
+    }
+    
+    return NextResponse.json(
+      { error: 'Invalid action. Use { "action": "setup-permissions" }' },
+      { status: 400 }
+    );
+    
+  } catch (error) {
+    log('error', 'PUT request error', error);
+    return NextResponse.json(
+      { 
+        error: 'Internal server error', 
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
 }
