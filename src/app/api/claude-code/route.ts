@@ -1,5 +1,8 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
 import { NextRequest, NextResponse } from "next/server";
+import * as os from "os";
+import * as path from "path";
+import * as fs from "fs";
 
 // Type definitions matching the request structure
 interface StreamRequest {
@@ -31,6 +34,10 @@ interface FinalResponse {
   error?: string;
 }
 
+event: complete
+data: {"success":true,"session_id":"bf54324f-3b63-409e-95e7-784937a1abe3","total_events":3,"final_result":{"type":"result","subtype":"success","is_error":false,"duration_ms":11589,"duration_api_ms":8792,"num_turns":1,"result":"[NEED_MORE_INFO]\n\nI need more details to help you change text:\n\n1. Which folder are you referring to?\n2. What specific text do you want to change?\n3. What should it be changed to?\n4. Are you looking to change text in a specific file, or across multiple files?","session_id":"bf54324f-3b63-409e-95e7-784937a1abe3","total_cost_usd":0.0169029,"usage":{"input_tokens":3,"cache_creation_input_tokens":3408,"cache_read_input_tokens":10013,"output_tokens":74,"server_tool_use":{"web_search_requests":0}}}}
+
+
 // Utility function to create SSE formatted data
 function createSSEData(event: string, data: any): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -43,6 +50,66 @@ function logWithSession(level: 'info' | 'error' | 'warn' | 'debug', message: str
   const logMessage = `${timestamp} ${prefix} ${message}`;
   
   console.log(`${level.toUpperCase()}: ${logMessage}${data ? ` ${data}` : ''}`);
+}
+
+// Utility function to get the dynamic project directory
+function getProjectDirectory(): string {
+  try {
+    // Try multiple approaches to get the correct directory
+    const homeDir = os.homedir();
+    let projectDir = path.join(homeDir, 'editable-claude-projects');
+    
+    // Hardcoded fallback for your specific setup
+    const hardcodedDir = '/home/ismae/editable-claude-projects';
+    
+    // console.log(`[DEBUG] Home directory: ${homeDir}`);
+    // console.log(`[DEBUG] Computed project directory: ${projectDir}`);
+    // console.log(`[DEBUG] Hardcoded directory: ${hardcodedDir}`);
+    // console.log(`[DEBUG] Process CWD: ${process.cwd()}`);
+    // console.log(`[DEBUG] Environment user: ${process.env.USER || process.env.USERNAME || 'unknown'}`);
+    
+    // If the hardcoded path exists and the computed one doesn't, use hardcoded
+    if (fs.existsSync(hardcodedDir) && !fs.existsSync(projectDir)) {
+      // console.log(`[DEBUG] Using hardcoded directory as it exists`);
+      projectDir = hardcodedDir;
+    }
+    
+    // Check if directory exists
+    const dirExists = fs.existsSync(projectDir);
+    // console.log(`[DEBUG] Directory exists: ${dirExists}`);
+    
+    // Ensure the directory exists
+    if (!dirExists) {
+      // console.log(`[DEBUG] Creating directory: ${projectDir}`);
+      fs.mkdirSync(projectDir, { recursive: true });
+      // console.log(`[DEBUG] Directory created successfully`);
+    }
+    
+    // Verify we can access the directory
+    try {
+      const stats = fs.statSync(projectDir);
+      console.log(`[DEBUG] Directory stats - isDirectory: ${stats.isDirectory()}, mode: ${stats.mode}`);
+    } catch (statError) {
+      console.error(`[DEBUG] Error getting directory stats:`, statError);
+    }
+    
+    // console.log(`[DEBUG] Final project directory: ${projectDir}`);
+    return projectDir;
+  } catch (error) {
+    // console.error('[DEBUG] Error in getProjectDirectory:', error);
+
+    const desktopUsername = process.env.DESKTOP_USERNAME;
+    // Last resort - use the hardcoded path
+    let fallback = `/home/${desktopUsername}/editable-claude-projects`;
+
+    if(!desktopUsername) {
+      console.error('[DEBUG] DESKTOP_USERNAME environment variable is not set');
+      return '/home/ismae/editable-claude-projects';
+    }
+
+    console.log(`[DEBUG] Using hardcoded fallback: ${fallback}`);
+    return fallback;
+  }
 }
 
 // GET endpoint for simple streaming queries
@@ -128,12 +195,15 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
 
       try {
         // Prepare Claude Code SDK options
+        const projectDir = getProjectDirectory();
         const options: any = {
           maxTurns: streamRequest.maxTurns || 10,
           outputFormat: 'stream-json', // Force stream-json for real-time updates
           verbose: streamRequest.verbose || true,
-          // Add permission mode to bypass prompts in streaming mode
-          permissionMode: 'acceptEdits',
+          // Add permission mode to bypass all prompts in streaming mode (including bash commands)
+          permissionMode: 'bypassPermissions',
+          // Set working directory to the dynamic project directory
+          cwd: projectDir,
         };
 
         // Add session management
@@ -149,8 +219,21 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         if (streamRequest.systemPrompt) {
           options.systemPrompt = streamRequest.systemPrompt;
         }
+        
+        // Always add context validation instruction unless custom system prompt is provided
+        if (!streamRequest.systemPrompt) {
+          options.systemPrompt = "You are a helpful AI assistant.";
+        } else {
+          options.systemPrompt = streamRequest.systemPrompt;
+        }
+        
+        // Always append the readiness instruction (this ensures it's always included)
+        const readinessInstruction = "\n\nCRITICAL STREAMING EVENT INSTRUCTION: This is a streaming API that sends real-time events to the frontend. Before doing ANYTHING (including using tools, reading files, or providing explanations), you MUST first assess if you need more information from the user. If you need clarification, start your response with '[NEED_MORE_INFO]' followed by your questions - this will trigger a 'needs_info' event for the frontend. If you have enough information to proceed with the user's request, start your very first response with '[READY_TO_PROCEED]' as the first text - this will trigger a readiness event in the streaming response that tells the frontend you're starting work. Then continue with your actual work. These markers '[NEED_MORE_INFO]' and '[READY_TO_PROCEED]' are REQUIRED for every request and serve as signals to the streaming frontend.";
+        
         if (streamRequest.appendSystemPrompt) {
-          options.appendSystemPrompt = streamRequest.appendSystemPrompt;
+          options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction;
+        } else {
+          options.appendSystemPrompt = readinessInstruction;
         }
 
         // Add tool configuration
@@ -164,6 +247,13 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         if (streamRequest.disallowedTools) {
           options.disallowedTools = streamRequest.disallowedTools.split(',').map(t => t.trim());
         }
+
+        logWithSession(
+          'info',
+          'Using project directory',
+          sessionId,
+          `directory: ${projectDir}`
+        );
 
         logWithSession(
           'info',
@@ -226,6 +316,60 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
                 content: message.message.content,
                 role: message.message.role
               };
+              
+              // Check if Claude is indicating readiness to proceed
+              const content = message.message.content;
+              let contentText = '';
+              
+              // Debug: Log the raw content structure
+              logWithSession('debug', 'Assistant message content received', message.session_id, JSON.stringify(content));
+              
+              // Extract text content from different message formats
+              if (typeof content === 'string') {
+                contentText = content;
+                logWithSession('debug', 'Content is string', message.session_id, contentText.slice(0, 100));
+              } else if (Array.isArray(content)) {
+                contentText = content
+                  .map((block: any) => {
+                    if (typeof block === 'string') return block;
+                    if (block?.text) return block.text;
+                    if (block?.type === 'text' && block?.text) return block.text;
+                    return '';
+                  })
+                  .join('');
+                logWithSession('debug', 'Content is array, extracted text', message.session_id, contentText.slice(0, 100));
+              } else if (content && typeof content === 'object' && content.text) {
+                contentText = content.text;
+                logWithSession('debug', 'Content is object with text', message.session_id, contentText.slice(0, 100));
+              }
+              
+              // Debug: Always log what we're checking
+              logWithSession('debug', 'Checking for [READY_TO_PROCEED] in text', message.session_id, `Text length: ${contentText.length}, Contains marker: ${contentText.includes('[READY_TO_PROCEED]')}`);
+              
+              if (contentText.includes('[READY_TO_PROCEED]')) {
+                const readinessEvent = {
+                  type: 'readiness',
+                  session_id: message.session_id,
+                  status: 'ready_to_proceed',
+                  message: 'Claude has sufficient context and is beginning work'
+                };
+                controller.enqueue(new TextEncoder().encode(createSSEData('readiness_status', readinessEvent)));
+                
+                logWithSession('info', 'Claude readiness detected', message.session_id, '[READY_TO_PROCEED] marker found');
+              }
+              
+              if (contentText.includes('[NEED_MORE_INFO]')) {
+                const needsInfoEvent = {
+                  type: 'needs_info',
+                  session_id: message.session_id,
+                  status: 'needs_more_info',
+                  message: 'Claude needs additional information to proceed'
+                };
+                controller.enqueue(new TextEncoder().encode(createSSEData('needs_info_status', needsInfoEvent)));
+                
+                logWithSession('info', 'Claude needs more info detected', message.session_id, '[NEED_MORE_INFO] marker found');
+              }
+              
               controller.enqueue(new TextEncoder().encode(createSSEData('claude_event', assistantEvent)));
               break;
 

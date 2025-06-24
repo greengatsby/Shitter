@@ -61,6 +61,7 @@ export default function ClaudeTestPage() {
   const [streamSessionId, setStreamSessionId] = useState<string>('');
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [debugEditOutput, setDebugEditOutput] = useState<string[]>([]);
+  const [claudeReadinessStatus, setClaudeReadinessStatus] = useState<'gathering_info' | 'needs_more_info' | 'ready_to_proceed' | 'working' | null>(null);
   
   // Settings state
   const [settings, setSettings] = useState<RequestSettings>({
@@ -246,6 +247,7 @@ export default function ClaudeTestPage() {
     setStreamOutput([]);
     setResponse(null);
     setDebugEditOutput([]);
+    setClaudeReadinessStatus('gathering_info');
 
     try {
       // Build request body for Claude Code API
@@ -506,6 +508,27 @@ export default function ClaudeTestPage() {
                   toast.success('Conversation completed!');
                   return; // Exit the while loop
 
+                case 'readiness_status':
+                  if (data.status === 'ready_to_proceed') {
+                    setClaudeReadinessStatus('ready_to_proceed');
+                    setStreamOutput(prev => [...prev, `🚀 [${timestamp}] Claude is ready to proceed with the task!`]);
+                    toast.success('Claude has enough context and is starting work!');
+                    
+                    // After a brief moment, update to working status
+                    setTimeout(() => {
+                      setClaudeReadinessStatus('working');
+                    }, 1000);
+                  }
+                  break;
+
+                case 'needs_info_status':
+                  if (data.status === 'needs_more_info') {
+                    setClaudeReadinessStatus('needs_more_info');
+                    setStreamOutput(prev => [...prev, `❓ [${timestamp}] Claude needs more information to proceed`]);
+                    toast.info('Claude is asking for more details');
+                  }
+                  break;
+
                 case 'error':
                   setStreamOutput(prev => [...prev, `❌ [${timestamp}] ${data.error || 'Something went wrong'}`]);
                   if (settings.verbose && data.details) {
@@ -678,24 +701,6 @@ export default function ClaudeTestPage() {
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Button 
-                        type="submit" 
-                        disabled={loading || streaming || !prompt.trim()}
-                        onClick={handleSubmit}
-                      >
-                        {loading ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Send Request
-                          </>
-                        )}
-                      </Button>
-                      
-                      <Button 
                         type="button"
                         variant="outline"
                         disabled={loading || !prompt.trim()}
@@ -737,6 +742,22 @@ export default function ClaudeTestPage() {
                       {streamSessionId && (
                         <Badge variant="default" className="font-mono text-xs">
                           Session: {streamSessionId.slice(0, 8)}...
+                        </Badge>
+                      )}
+                      {claudeReadinessStatus && (
+                        <Badge 
+                          variant={claudeReadinessStatus === 'ready_to_proceed' ? 'default' : claudeReadinessStatus === 'working' ? 'secondary' : 'outline'} 
+                          className={`text-xs font-medium ${
+                            claudeReadinessStatus === 'gathering_info' ? 'bg-yellow-100 text-yellow-800' :
+                            claudeReadinessStatus === 'needs_more_info' ? 'bg-orange-100 text-orange-800' :
+                            claudeReadinessStatus === 'ready_to_proceed' ? 'bg-green-100 text-green-800' :
+                            claudeReadinessStatus === 'working' ? 'bg-blue-100 text-blue-800' : ''
+                          }`}
+                        >
+                          {claudeReadinessStatus === 'gathering_info' ? '🤔 Gathering Info' :
+                           claudeReadinessStatus === 'needs_more_info' ? '❓ Needs More Info' :
+                           claudeReadinessStatus === 'ready_to_proceed' ? '🚀 Ready to Proceed' :
+                           claudeReadinessStatus === 'working' ? '⚡ Working' : ''}
                         </Badge>
                       )}
                     </CardTitle>

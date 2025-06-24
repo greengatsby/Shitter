@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ngrok:start": "ngrok http 3000 --url=safe-slug-cool.ngrok-free.app"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.31",
