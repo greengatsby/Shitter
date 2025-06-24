@@ -71,28 +71,35 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are an expert at identifying target companies for B2B sales. Given a business idea, generate VERY SPECIFIC and NICHE keywords that would identify smaller companies who would actually purchase this service.
+          content: `You are an expert at identifying target companies using Apollo.io's search system. Apollo will automatically filter for:
+- Private companies only
+- 50-1000 employees  
+- <$500M revenue
+- Major markets (US, UK, Canada, etc.)
 
-AVOID broad terms that large corporations would match on (like "social media", "technology", "AI", "marketing").
+So focus ONLY on simple keywords that identify the RIGHT TYPE of business that needs this service.
 
-Focus on:
-- Specific industry niches and verticals  
-- Unique business model indicators
-- Specific pain points or use cases
-- Niche software categories or job titles
-- Emerging market segments
+Use BASIC TERMS that Apollo recognizes:
+✅ "logistics", "supply chain", "manufacturing", "retail", "e-commerce", "SaaS", "healthcare"
+❌ Complex phrases like "supply chain risk management startups"
 
-Target company profile: 50-2000 employees, established businesses with specific needs.
+Your job: Pick 2 simple industry terms that match companies who would buy this service.
 
-Return your response as a JSON object:
+Examples from working searches:
+- "logistics; supply chain" → Found 75+ companies
+- "e-commerce; retail" → For retail-focused services  
+- "SaaS; technology" → For tech services
+- "manufacturing; industrial" → For industrial services
+
+Return as JSON:
 {
-  "keywords": ["very_specific_term1", "niche_keyword2"], // MAX 3-4 NICHE keywords
-  "reasoning": "Why these specific terms identify our target market",
+  "keywords": ["simple_term1", "simple_term2"], // 2 basic industry terms
+  "reasoning": "Why companies in these industries need this service",
   "employee_count_min": 50,
-  "employee_count_max": 2000
+  "employee_count_max": 1000
 }
 
-CRITICAL: Use highly specific, niche terms that large corporations wouldn't match on.`
+Remember: Apollo handles all size/revenue filtering - just focus on INDUSTRY MATCH.`
         },
         {
           role: "user",
@@ -110,6 +117,17 @@ CRITICAL: Use highly specific, niche terms that large corporations wouldn't matc
     let searchResults = await searchApolloAPI(initialKeywords);
     let iterationCount = 0;
     const maxIterations = 3;
+    
+    // If we get 0 results, try a fallback search with simpler keywords
+    if (searchResults.organizations.length === 0) {
+      console.log('Trying fallback search with simpler keywords...');
+      const fallbackKeywords = {
+        keywords: ['logistics', 'supply chain'], // Simple, individual terms
+        employee_count_min: initialKeywords.employee_count_min,
+        employee_count_max: initialKeywords.employee_count_max
+      };
+      searchResults = await searchApolloAPI(fallbackKeywords);
+    }
     
     // Maintain conversation context for AI
     const conversationHistory: Array<{
@@ -135,36 +153,48 @@ CRITICAL: Use highly specific, niche terms that large corporations wouldn't matc
         messages: [
           {
             role: "system",
-            content: `You are reviewing search results from Apollo API for potential B2B customers.
+            content: `You are reviewing search results from Apollo API for potential B2B customers using Apollo's keyword tag system.
 
 You can see the FULL CONVERSATION HISTORY of previous search attempts. Use this to:
 - Learn from previous attempts that didn't work well
-- Avoid repeating the same keywords/strategies
+- RECOGNIZE when results are getting worse (decreasing numbers = keywords too specific)
+- If you see pattern like 75→2→5→0, STOP and finalize the best results you had
 - Understand what types of companies were found before
-- Make progressively better refinements
+- Make smarter refinements (broader when results drop, specific when results are too broad)
 
 Available actions:
-- search_refinement: Try different keywords/filters (avoid repeating previous attempts)
-- finalize_results: Accept current results as final (if good quality or reached good diversity)
+- search_refinement: Try different keywords/filters (only if current results are poor quality or <20 companies)
+- finalize_results: Accept current results as final (RECOMMENDED if you have 30+ good quality companies)
 
 Return your response as JSON:
 {
   "action": "search_refinement" | "finalize_results",
-  "reasoning": "Reference previous attempts and explain strategy for finding SMALLER, MORE RELEVANT companies",
+  "reasoning": "Explain your strategy - if results are decreasing, consider BROADENING keywords instead of narrowing",
   "refinements": {
-    "keywords": ["ultra_specific_niche_term"], // MAX 2-3 ULTRA-SPECIFIC keywords, COMPLETELY DIFFERENT approach
+    "keywords": ["broad_industry_term"], // Use BROAD terms that Apollo recognizes. If previous search had <10 results, try BROADER terms
     "employee_count_min": 50,
     "employee_count_max": 1000
   } // only if action is "search_refinement"
 }
 
 Evaluation criteria:
-- REJECT if you see: LinkedIn, Netflix, Deloitte, Oracle, Microsoft, Amazon, Google, Meta, IBM
-- REJECT if companies have >2000 employees  
+- REJECT if you see: LinkedIn, Netflix, Deloitte, Oracle, Microsoft, Amazon, Google, Meta, IBM, Wipro, PwC, Cognizant, EY, J&J, Accenture, TCS, Infosys
+- REJECT if companies have >$1B revenue or >1000 employees  
 - REJECT if companies are Fortune 500 or well-known brands
 - ACCEPT smaller, niche companies that actually need this service
-- Look for mid-market companies, agencies, e-commerce brands, SaaS startups
-- Prioritize finding companies you've never heard of (good sign!)`
+- Look for mid-market companies, agencies, e-commerce brands, SaaS startups, boutique firms, regional companies
+- Prioritize finding companies you've never heard of (good sign!)
+
+KEYWORD STRATEGY: 
+- If previous search found >50 companies: Try slightly more specific terms
+- If previous search found 10-50 companies: Keep similar specificity level  
+- If previous search found <10 companies: GO BROADER, use more general industry terms
+
+✅ BROAD TERMS (use when results are low): "logistics", "supply chain", "manufacturing", "retail", "e-commerce", "SaaS", "healthcare", "software", "technology"
+✅ MEDIUM TERMS (use when results are good): "warehouse", "shipping", "inventory", "fulfillment", "distribution"
+❌ TOO SPECIFIC (avoid unless you have 100+ results): "supply chain analytics startups", "DTC supply chain solutions", "predictive logistics"
+
+IMPORTANT: If you see results dropping (75→2→5), that means keywords are getting TOO SPECIFIC. Go back to broader terms!`
           },
           {
             role: "user", 
@@ -191,16 +221,24 @@ Based on the full conversation history above, decide whether to refine the searc
 
       const cleanReviewResponse = cleanJsonResponse(reviewResponse.choices[0].message.content || '{}');
       const reviewDecision = JSON.parse(cleanReviewResponse);
-      console.log(`Review iteration ${iterationCount + 1}:`, reviewDecision);
+
+      // Log what the AI is evaluating
+      console.log(`\n=== AI DECISION POINT (Iteration ${iterationCount + 1}) ===`);
+      console.log(`Current results: ${searchResults.organizations.length} companies found`);
+      console.log(`Sample company names: ${searchResults.organizations.slice(0, 5).map(c => c.name).join(', ')}`);
+      console.log(`AI Decision: ${reviewDecision.action}`);
 
       // Add decision to the most recent conversation history entry
       conversationHistory[conversationHistory.length - 1].decision = reviewDecision;
 
       if (reviewDecision.action === 'finalize_results') {
-        console.log('AI decided to finalize results');
+        console.log(`Iteration ${iterationCount + 1}: Finalizing results`);
+        console.log(`AI reasoning: ${reviewDecision.reasoning || 'No reasoning provided'}`);
         break;
       } else if (reviewDecision.action === 'search_refinement' && reviewDecision.refinements) {
-        console.log('AI suggested refinements, searching again...');
+        console.log(`Iteration ${iterationCount + 1}: Refining search with new keywords`);
+        console.log(`AI reasoning: ${reviewDecision.reasoning || 'No reasoning provided'}`);
+        console.log(`New keywords: ${JSON.stringify(reviewDecision.refinements.keywords || reviewDecision.refinements)}`);
         searchResults = await searchApolloAPI(reviewDecision.refinements);
         iterationCount++;
         // Add new iteration to conversation history
@@ -210,8 +248,6 @@ Based on the full conversation history above, decide whether to refine the searc
           results: searchResults.organizations.slice(0, 10),
           companiesFound: searchResults.organizations.length
         });
-
-        console.log('Conversation history:', JSON.stringify(conversationHistory, null, 2));
       } else {
         break;
       }
@@ -244,74 +280,110 @@ async function searchApolloAPI(searchParams: any): Promise<ApolloSearchResponse>
     throw new Error('Apollo API key not configured');
   }
 
-  // Limit keywords to avoid Apollo's "Value too long" error
-  const keywords = searchParams.keywords || ['technology', 'software'];
-  const limitedKeywords = keywords.slice(0, 5); // Limit to 5 keywords max
-  const keywordString = limitedKeywords.join(' ');
+  // Format keywords for Apollo's keyword tags parameter (based on working Postman example)
+  const keywords = searchParams.keywords || ['logistics', 'supply chain'];
+  const limitedKeywords = keywords.slice(0, 2); // Limit to 2 keywords max for better results
+  const keywordString = limitedKeywords.join('; '); // Use semicolon separator as in working example
   
   // Ensure keyword string doesn't exceed ~100 characters
   const truncatedKeywords = keywordString.length > 100 
     ? keywordString.substring(0, 100).trim()
     : keywordString;
+    
+  console.log(`Using keywords: "${truncatedKeywords}"`);  
 
-  const searchPayload = {
-    q_keywords: truncatedKeywords,
-    page: 1,
-    per_page: 25,
-    // Employee count filtering using correct Apollo API parameter names
-    num_employees_ranges: [`${searchParams.employee_count_min || 50},${searchParams.employee_count_max || 1000}`],
-    // Additional filters to avoid large corporations
-    public_companies: false, // Exclude publicly traded companies
-    organization_revenue_ranges: ['0,100000000'], // Max $100M revenue to avoid Fortune 500
-  };
-
-  console.log('Apollo API search payload:', JSON.stringify(searchPayload, null, 2));
-  console.log('Apollo API key (first 10 chars):', apolloApiKey.substring(0, 10) + '...');
-
-  const response = await fetch('https://api.apollo.io/api/v1/mixed_companies/search', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache',
-      'X-Api-Key': apolloApiKey
-    },
-    body: JSON.stringify(searchPayload)
-  });
-
-  // console.log('Apollo API response status:', response.status);
-  // console.log('Apollo API response headers:', Object.fromEntries(response.headers.entries()));
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.log('Apollo API error response:', errorText);
-    throw new Error(`Apollo API error: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  console.log(`Apollo API returned ${data.organizations?.length || 0} companies`);
-  console.log('Apollo API full response structure:', {
-    organizations_count: data.organizations?.length,
-    total_entries: data.total_entries,
-    page: data.page,
-    per_page: data.per_page,
-    pagination: data.pagination,
-    errors: data.errors,
-    warnings: data.warnings
-  });
+  // Try to get more results by searching multiple pages if needed
+  let allOrganizations: CompanySearchResult[] = [];
+  let currentPage = 1;
+  const maxPages = 10; // Limit to first 3 pages to avoid long search times
   
-  // Log sample companies with their employee counts
-  if (data.organizations?.length > 0) {
-    console.log('Sample companies returned:');
-    data.organizations.slice(0, 5).forEach((org: any, index: number) => {
-      console.log(`${index + 1}. ${org.name} - Employees: ${org.estimated_num_employees || 'unknown'} - Revenue: ${org.organization_revenue_printed || 'unknown'}`);
+  while (currentPage <= maxPages) {
+    const searchPayload: any = {
+      // Use organization keyword tags parameter (from working Postman example)
+      'q_organization_keyword_tags[]': truncatedKeywords,
+      page: currentPage,
+      per_page: 25,
+      
+      // Use Apollo's native filtering instead of post-filtering - smaller companies
+      'organization_num_employees_ranges[]': [`${searchParams.employee_count_min || 50},${searchParams.employee_count_max || 500}`], // Reduced from 1000 to 500
+      'publicly_traded_status[]': ['private'], // Focus on private companies to avoid Fortune 500
+      
+      // Filter by revenue using correct Apollo API parameters (max $100M to avoid large corporations)
+      'revenue_range[max]': '50000000', // $100M max revenue
+      
+      // Focus on specific countries to avoid global consulting giants
+      'organization_locations[]': [
+        'United States',
+        'Canada', 
+        'United Kingdom',
+        'Australia',
+        'Germany',
+        'Netherlands'
+      ]
+    };
+
+    // Build URL with query parameters (following working Postman example)
+    const queryParams = new URLSearchParams();
+    Object.entries(searchPayload).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach(v => queryParams.append(key, String(v)));
+      } else if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
     });
+
+    const fullUrl = `https://api.apollo.io/api/v1/mixed_companies/search?${queryParams.toString()}`;
+    
+    const response = await fetch(fullUrl, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache',
+        'X-Api-Key': apolloApiKey
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Apollo API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Add organizations from this page to our collection
+    if (data.organizations && data.organizations.length > 0) {
+      allOrganizations.push(...data.organizations);
+      console.log(`Page ${currentPage}: Found ${data.organizations.length} companies`);
+      
+      // Log a few sample companies from the first page of each search
+      if (currentPage === 1) {
+        console.log('Sample companies:');
+        data.organizations.slice(0, 3).forEach((org: any, index: number) => {
+          console.log(`  ${index + 1}. ${org.name} - Revenue: ${org.organization_revenue_printed || 'unknown'}`);
+        });
+      }
+    }
+
+    // Check if there are more pages and if we should continue
+    const pagination = data.pagination || data;
+    const totalPages = pagination.total_pages || Math.ceil((pagination.total_entries || 0) / (pagination.per_page || 25));
+    
+    if (currentPage >= totalPages || data.organizations?.length === 0) {
+      break;
+    }
+    
+    currentPage++;
+    
+    // Add a small delay between requests to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
 
+  console.log(`Apollo search completed: ${allOrganizations.length} companies found`);
+  
   return {
-    organizations: data.organizations || [],
-    total_entries: data.total_entries || 0,
-    page: data.page || 1,
-    per_page: data.per_page || 50
+    organizations: allOrganizations,
+    total_entries: allOrganizations.length,
+    page: 1,
+    per_page: allOrganizations.length
   };
 }
 
