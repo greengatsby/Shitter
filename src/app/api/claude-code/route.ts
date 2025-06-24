@@ -51,15 +51,23 @@ function logWithSession(level: 'info' | 'error' | 'warn' | 'debug', message: str
 // Utility function to get the dynamic project directory
 function getProjectDirectory(): string {
   try {
+
+    const STEER_PROJECTS_DIR_BASE = process.env.STEER_PROJECTS_DIR_BASE;
+
+    if(!STEER_PROJECTS_DIR_BASE) {
+      console.log(`[DEBUG] STEER_PROJECTS_DIR_BASE is not set`);
+      return '/home/ismae/editable-claude-projects';
+    }
+
     // Try multiple approaches to get the correct directory
     const homeDir = os.homedir();
-    let projectDir = path.join(homeDir, 'editable-claude-projects');
+    let projectDir = path.join(homeDir, STEER_PROJECTS_DIR_BASE);
     
     // Hardcoded fallback for your specific setup
     const hardcodedDir = '/home/ismae/editable-claude-projects';
     
     // console.log(`[DEBUG] Home directory: ${homeDir}`);
-    // console.log(`[DEBUG] Computed project directory: ${projectDir}`);
+    console.log(`[DEBUG] Computed project directory: ${projectDir}`);
     // console.log(`[DEBUG] Hardcoded directory: ${hardcodedDir}`);
     // console.log(`[DEBUG] Process CWD: ${process.cwd()}`);
     // console.log(`[DEBUG] Environment user: ${process.env.USER || process.env.USERNAME || 'unknown'}`);
@@ -205,11 +213,21 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         // Add session management
         if (sessionId) {
           options.resume = sessionId;
-          logWithSession('info', 'Resuming session', sessionId, sessionId);
+          logWithSession('info', 'Resuming session', sessionId, `Attempting to resume session: ${sessionId}`);
         } else if (streamRequest.continue_conversation) {
           options.continue = true;
-          logWithSession('info', 'Continuing most recent conversation', sessionId);
+          logWithSession('info', 'Continuing most recent conversation', sessionId, 'Using continue option instead of specific session ID');
+        } else {
+          logWithSession('info', 'Creating new session', sessionId, 'No session ID provided, will create new session');
         }
+
+        // Log the exact options being sent to SDK for debugging
+        logWithSession('debug', 'Claude Code SDK Options', sessionId, JSON.stringify({
+          resume: options.resume,
+          continue: options.continue,
+          cwd: options.cwd,
+          permissionMode: options.permissionMode
+        }));
 
         // Add system prompts
         if (streamRequest.systemPrompt) {
@@ -224,12 +242,15 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         }
         
         // Always append the readiness instruction (this ensures it's always included)
-        const readinessInstruction = "\n\nCRITICAL STREAMING EVENT INSTRUCTION: This is a streaming API that sends real-time events to the frontend. Before doing ANYTHING (including using tools, reading files, or providing explanations), you MUST first assess if you need more information from the user. If you need clarification, start your response with '[NEED_MORE_INFO]' followed by your questions - this will trigger a 'needs_info' event for the frontend. If you have enough information to proceed with the user's request, start your very first response with '[READY_TO_PROCEED]' as the first text - this will trigger a readiness event in the streaming response that tells the frontend you're starting work. Then continue with your actual work. These markers '[NEED_MORE_INFO]' and '[READY_TO_PROCEED]' are REQUIRED for every request and serve as signals to the streaming frontend.";
+        const readinessInstruction = "\n\nCRITICAL STREAMING EVENT INSTRUCTION: This is a streaming API that sends real-time events to the frontend. Before doing ANYTHING, you MUST assess if you need information from the user:\n\n**[NEED_MORE_INFO] USAGE**: ONLY use '[NEED_MORE_INFO]' if you need clarification FROM THE USER and will STOP/TERMINATE the request waiting for user input. DO NOT use this flag if you can figure things out yourself (like searching for files, reading code, etc.). If you can proceed by using tools to gather information, just do it.\n\n**[READY_TO_PROCEED] USAGE**: If you have enough information OR can gather the needed information using available tools, start with '[READY_TO_PROCEED]' and continue with your work.\n\nThese markers are REQUIRED for every request and serve as signals to the streaming frontend.";
+        
+        // Git workflow instructions
+        const gitWorkflowInstruction = "\n\n🚨 MANDATORY GIT WORKFLOW: For ANY code changes, you MUST complete this ENTIRE workflow. Do NOT end the conversation until all steps are complete!\n\n**WORKFLOW ENFORCEMENT**: After making ANY code edit, you MUST immediately proceed to git workflow steps. Failure to complete git workflow is considered task failure.\n\n**STEP-BY-STEP REQUIREMENTS**:\n\n1. **IDENTIFY PROJECT**: Extract project path from file paths you're editing\n\n2. **GIT STATUS CHECK**: Run 'cd /path/to/project && git status' to verify git repo and current branch\n\n3. **SWITCH TO DEV BRANCH**: \n   - Run 'cd /path/to/project && git checkout dev' \n   - If dev doesn't exist: 'cd /path/to/project && git checkout -b dev'\n   - **MANDATORY PULL**: 'cd /path/to/project && git fetch && git pull origin dev'\n\n4. **MAKE CODE CHANGES**: Edit/create files as requested\n\n5. **GIT STATUS VERIFICATION**: Run 'cd /path/to/project && git status' to confirm files were changed\n\n6. **STAGE AND COMMIT**: \n   - Stage: 'cd /path/to/project && git add .'\n   - Commit: 'cd /path/to/project && git commit -m \"[Specific change description]\"'\n\n7. **PUSH TO DEV**: \n   - Push: 'cd /path/to/project && git push origin dev'\n   - Verify: 'cd /path/to/project && git log --oneline -1' to confirm push\n\n8. **MANDATORY FLAG**: You MUST end with '[CONFIRM_TO_PROD] Changes committed and pushed to dev branch. Review changes and confirm deployment to production.'\n\n9. **PRODUCTION DEPLOYMENT**: Only after user confirms with 'yes/deploy/confirm':\n   - 'cd /path/to/project && git checkout main && git merge dev && git push origin main'\n\n🚨 **CRITICAL RULES**:\n- NEVER skip git workflow steps\n- NEVER end conversation without [CONFIRM_TO_PROD] flag\n- EVERY code change = FULL git workflow\n- Use 'cd /path/to/project &&' prefix for ALL git commands\n- NEVER run 'npm run build' or any build commands - deployment handles building automatically";
         
         if (streamRequest.appendSystemPrompt) {
-          options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction;
+          options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction + gitWorkflowInstruction;
         } else {
-          options.appendSystemPrompt = readinessInstruction;
+          options.appendSystemPrompt = readinessInstruction + gitWorkflowInstruction;
         }
 
         // Add tool configuration
@@ -273,8 +294,26 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
           
           // Extract session ID from messages
           if (message.session_id && message.session_id !== currentSessionId) {
+            const previousSessionId = currentSessionId;
             currentSessionId = message.session_id;
-            logWithSession('info', 'Session ID updated', currentSessionId, currentSessionId);
+            
+            if (previousSessionId === sessionId) {
+              // This is the expected case for first message when we provided a session ID
+              logWithSession('info', 'Session confirmed', currentSessionId, 
+                `Successfully resumed session: ${sessionId}`);
+            } else if (!previousSessionId && sessionId) {
+              // We requested a specific session but got a different one - SDK failed to resume
+              logWithSession('error', 'SESSION RESUME FAILED', currentSessionId, 
+                `Requested session: ${sessionId}, but SDK created new session: ${message.session_id}. Session may have expired or SDK resume is broken.`);
+            } else if (!previousSessionId) {
+              // First session ID received for new session (expected for fresh starts)
+              logWithSession('info', 'New session created', currentSessionId, 
+                `New session started with ID: ${message.session_id}`);
+            } else {
+              // Unexpected session change mid-conversation
+              logWithSession('error', 'UNEXPECTED SESSION ID CHANGE', currentSessionId, 
+                `Expected: ${previousSessionId}, Got: ${message.session_id}. This indicates SDK is not resuming sessions properly.`);
+            }
           }
 
           // Handle different message types
@@ -364,6 +403,18 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
                 controller.enqueue(new TextEncoder().encode(createSSEData('needs_info_status', needsInfoEvent)));
                 
                 logWithSession('info', 'Claude needs more info detected', message.session_id, '[NEED_MORE_INFO] marker found');
+              }
+              
+              if (contentText.includes('[CONFIRM_TO_PROD]')) {
+                const confirmToProdEvent = {
+                  type: 'confirm_to_prod',
+                  session_id: message.session_id,
+                  status: 'awaiting_prod_confirmation',
+                  message: 'Changes committed to dev branch, awaiting confirmation to deploy to production'
+                };
+                controller.enqueue(new TextEncoder().encode(createSSEData('confirm_to_prod_status', confirmToProdEvent)));
+                
+                logWithSession('info', 'Claude awaiting prod confirmation detected', message.session_id, '[CONFIRM_TO_PROD] marker found');
               }
               
               controller.enqueue(new TextEncoder().encode(createSSEData('claude_event', assistantEvent)));
