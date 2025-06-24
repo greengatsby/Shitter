@@ -34,10 +34,6 @@ interface FinalResponse {
   error?: string;
 }
 
-event: complete
-data: {"success":true,"session_id":"bf54324f-3b63-409e-95e7-784937a1abe3","total_events":3,"final_result":{"type":"result","subtype":"success","is_error":false,"duration_ms":11589,"duration_api_ms":8792,"num_turns":1,"result":"[NEED_MORE_INFO]\n\nI need more details to help you change text:\n\n1. Which folder are you referring to?\n2. What specific text do you want to change?\n3. What should it be changed to?\n4. Are you looking to change text in a specific file, or across multiple files?","session_id":"bf54324f-3b63-409e-95e7-784937a1abe3","total_cost_usd":0.0169029,"usage":{"input_tokens":3,"cache_creation_input_tokens":3408,"cache_read_input_tokens":10013,"output_tokens":74,"server_tool_use":{"web_search_requests":0}}}}
-
-
 // Utility function to create SSE formatted data
 function createSSEData(event: string, data: any): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
