@@ -71,8 +71,13 @@ export default function SignUpPage() {
         throw new Error(data.error || 'Sign up failed')
       }
 
-      // Redirect to dashboard
-      router.push('/dashboard')
+      if (data.needsEmailConfirmation) {
+        // Show success message and redirect to sign in with instructions
+        router.push('/auth/signin?message=' + encodeURIComponent(data.message))
+      } else {
+        // User is signed in, redirect to dashboard
+        router.push('/dashboard')
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'An unexpected error occurred')
     } finally {

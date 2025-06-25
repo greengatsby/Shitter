@@ -147,3 +147,122 @@ The GitHub MCP server also provides these resources:
 - Commit history and branch information
 
 These resources can be accessed through the MCP protocol and used by Claude Code for various GitHub operations.
+
+# GitHub Integration Setup
+
+The GitHub integration has been implemented with full OAuth support, allowing organizations to connect their GitHub accounts and sync repositories.
+
+## Setup Instructions
+
+### 1. Create a GitHub OAuth App
+
+1. Go to [GitHub Settings > Developer settings > OAuth Apps](https://github.com/settings/applications/new)
+2. Click "New OAuth App"
+3. Fill in the application details:
+   - **Application name**: Your application name (e.g., "Shitter - Team Management")
+   - **Homepage URL**: Your application URL (e.g., `http://localhost:3000` for development)
+   - **Application description**: Optional description
+   - **Authorization callback URL**: `http://localhost:3000/api/github/callback` (replace with your domain for production)
+
+4. Click "Register application"
+5. Copy the **Client ID** and generate a **Client Secret**
+
+### 2. Add Environment Variables
+
+Add the following environment variables to your `.env.local` file:
+
+```bash
+# GitHub OAuth Configuration
+NEXT_PUBLIC_GITHUB_CLIENT_ID=your_github_client_id_here
+GITHUB_CLIENT_SECRET=your_github_client_secret_here
+```
+
+**Important Notes:**
+- The `NEXT_PUBLIC_GITHUB_CLIENT_ID` is exposed to the client side for OAuth initiation
+- The `GITHUB_CLIENT_SECRET` is kept server-side only for security
+- For production, update the callback URL to match your production domain
+
+### 3. Database Schema
+
+The integration uses the following database tables (already included in your schema):
+
+- `github_integrations` - Stores GitHub OAuth data per organization
+- `github_repositories` - Stores synced repository information
+- `user_repository_assignments` - Manages user access to repositories
+
+### 4. How the Integration Works
+
+#### OAuth Flow:
+1. User clicks "Connect GitHub" in the dashboard
+2. A popup opens with GitHub's OAuth authorization page
+3. User authorizes the application on GitHub
+4. GitHub redirects to `/api/github/callback` with an authorization code
+5. The callback page communicates back to the parent window
+6. The authorization code is exchanged for an access token
+7. User info and repositories are fetched and stored
+
+#### Features:
+- **Connect GitHub Account**: OAuth integration with popup flow
+- **Sync Repositories**: Fetch and update repository list from GitHub
+- **Disconnect Integration**: Deactivate the GitHub integration
+- **Repository Management**: View synced repositories with links to GitHub
+- **Team Access**: Manage which team members have access to which repositories
+
+### 5. API Endpoints
+
+The following API endpoints are available:
+
+#### GitHub OAuth
+- `GET /api/github/oauth?organization_id={id}` - Get integrations and repositories
+- `POST /api/github/oauth` - Handle OAuth callback and save integration
+- `DELETE /api/github/oauth/{integration_id}` - Disconnect integration
+
+#### Repository Management
+- `POST /api/github/sync-repositories` - Sync repositories from GitHub
+- `POST /api/github/repositories/{id}/assignments` - Assign user to repository
+- `GET /api/github/repositories/{id}/assignments` - Get repository assignments
+
+#### OAuth Callback
+- `GET /api/github/callback` - OAuth callback endpoint (handles popup communication)
+
+### 6. Permissions and Scopes
+
+The integration requests the following GitHub scopes:
+- `repo` - Access to private and public repositories
+- `read:org` - Read organization membership
+- `read:user` - Read user profile information
+- `user:email` - Access to user email addresses
+
+### 7. Security Considerations
+
+- Access tokens are stored encrypted in the database
+- OAuth state parameter includes organization ID for validation
+- Popup-based OAuth flow prevents redirect hijacking
+- Server-side token exchange keeps client secret secure
+- Row Level Security (RLS) policies control data access
+
+### 8. Development vs Production
+
+**Development:**
+- Callback URL: `http://localhost:3000/api/github/callback`
+- Site URL: `http://localhost:3000`
+
+**Production:**
+- Update callback URL in GitHub OAuth app settings
+- Update `NEXT_PUBLIC_SITE_URL` environment variable
+- Ensure HTTPS is enabled for OAuth security
+
+### 9. Troubleshooting
+
+**Common Issues:**
+- **"GitHub integration not properly configured"**: Check that `NEXT_PUBLIC_GITHUB_CLIENT_ID` is set
+- **"Popup blocked"**: User needs to allow popups for the domain
+- **"OAuth state mismatch"**: Clear browser cache and try again
+- **"Failed to exchange code"**: Check that `GITHUB_CLIENT_SECRET` is correct
+- **"Repository sync failed"**: GitHub token may have expired or insufficient permissions
+
+**Debug Steps:**
+1. Check browser console for JavaScript errors
+2. Verify environment variables are loaded
+3. Test OAuth app settings in GitHub
+4. Check API endpoint responses in Network tab

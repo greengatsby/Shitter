@@ -61,7 +61,10 @@ function getProjectDirectory(): string {
 
     // Try multiple approaches to get the correct directory
     const homeDir = os.homedir();
-    let projectDir = path.join(homeDir, STEER_PROJECTS_DIR_BASE);
+    // Check if STEER_PROJECTS_DIR_BASE is already an absolute path
+    let projectDir = path.isAbsolute(STEER_PROJECTS_DIR_BASE) 
+      ? STEER_PROJECTS_DIR_BASE 
+      : path.join(homeDir, STEER_PROJECTS_DIR_BASE);
     
     // Hardcoded fallback for your specific setup
     const hardcodedDir = '/home/ismae/editable-claude-projects';

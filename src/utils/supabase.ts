@@ -94,29 +94,28 @@ export const authHelpers = {
 
 // Organization management helpers
 export const organizationHelpers = {
-  async createOrganization(name: string, slug: string, userId?: string) {
-    let ownerId = userId;
-    
-    if (!ownerId) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      ownerId = user.id;
-    }
+  async createOrganization(name: string, slug: string, userId?: string, supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user && !userId) throw new Error('User not authenticated');
 
-    const { data, error } = await supabase.rpc('create_organization_with_owner', {
+    const actualUserId = userId || user.id;
+
+    const { data, error } = await client.rpc('create_organization_with_owner', {
       org_name: name,
       org_slug: slug,
-      owner_user_id: ownerId
+      owner_user_id: actualUserId
     });
 
     return { data, error };
   },
 
-  async getUserOrganizations() {
-    const { data: { user } } = await supabase.auth.getUser();
+  async getUserOrganizations(supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
     if (!user) return { data: null, error: new Error('User not authenticated') };
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('organization_members')
       .select(`
         id,
@@ -135,8 +134,9 @@ export const organizationHelpers = {
     return { data, error };
   },
 
-  async getOrganizationMembers(organizationId: string) {
-    const { data, error } = await supabase
+  async getOrganizationMembers(organizationId: string, supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
       .from('organization_members')
       .select(`
         id,
@@ -157,11 +157,12 @@ export const organizationHelpers = {
     return { data, error };
   },
 
-  async inviteUserByPhone(organizationId: string, phoneNumber: string, role: 'member' | 'admin' = 'member') {
-    const { data: { user } } = await supabase.auth.getUser();
+  async inviteUserByPhone(organizationId: string, phoneNumber: string, role: 'member' | 'admin' = 'member', supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    const { data, error } = await supabase.rpc('invite_user_to_organization', {
+    const { data, error } = await client.rpc('invite_user_to_organization', {
       org_id: organizationId,
       phone: phoneNumber,
       inviter_user_id: user.id,
@@ -171,8 +172,9 @@ export const organizationHelpers = {
     return { data, error };
   },
 
-  async updateMemberRole(memberId: string, role: 'member' | 'admin') {
-    const { data, error } = await supabase
+  async updateMemberRole(memberId: string, role: 'member' | 'admin', supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
       .from('organization_members')
       .update({ role })
       .eq('id', memberId)
@@ -181,8 +183,9 @@ export const organizationHelpers = {
     return { data, error };
   },
 
-  async removeMember(memberId: string) {
-    const { data, error } = await supabase
+  async removeMember(memberId: string, supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
       .from('organization_members')
       .delete()
       .eq('id', memberId);
@@ -215,6 +218,16 @@ export const githubHelpers = {
       .select('*')
       .eq('organization_id', organizationId)
       .eq('is_active', true);
+
+    return { data, error };
+  },
+
+  async disconnectGitHubIntegration(integrationId: string) {
+    const { data, error } = await supabase
+      .from('github_integrations')
+      .update({ is_active: false })
+      .eq('id', integrationId)
+      .select();
 
     return { data, error };
   },

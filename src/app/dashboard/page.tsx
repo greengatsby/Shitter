@@ -30,7 +30,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  User
+  User,
+  Trash2
 } from "lucide-react"
 
 interface Organization {
@@ -62,7 +63,9 @@ interface Member {
 interface GitHubIntegration {
   id: string
   github_username: string
+  github_user_id: number
   is_active: boolean
+  created_at: string
 }
 
 interface Repository {
@@ -72,6 +75,7 @@ interface Repository {
   description: string | null
   private: boolean
   html_url: string
+  github_repo_id: number
 }
 
 export default function DashboardPage() {
@@ -85,6 +89,7 @@ export default function DashboardPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [inviteData, setInviteData] = useState({ phone_number: '', role: 'member' })
   const [inviteLoading, setInviteLoading] = useState(false)
+  const [githubConnecting, setGithubConnecting] = useState(false)
 
   useEffect(() => {
     loadOrganizations()
@@ -180,8 +185,148 @@ export default function DashboardPage() {
   }
 
   const connectGitHub = () => {
-    // This would typically redirect to GitHub OAuth
-    alert('GitHub OAuth integration would be implemented here')
+    if (!currentOrg) return
+
+    setGithubConnecting(true)
+    setError('')
+
+    // Create GitHub OAuth URL
+    const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
+    if (!clientId) {
+      setError('GitHub integration not properly configured. Missing client ID.')
+      setGithubConnecting(false)
+      return
+    }
+
+    const scope = 'repo,read:org,read:user,user:email'
+    const state = `org_${currentOrg.organization.id}_${Date.now()}`
+    const redirectUri = `${window.location.origin}/api/github/callback`
+
+    const githubAuthUrl = `https://github.com/login/oauth/authorize?` +
+      `client_id=${clientId}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `scope=${encodeURIComponent(scope)}&` +
+      `state=${encodeURIComponent(state)}`
+
+    // Open GitHub OAuth in a popup
+    const popup = window.open(
+      githubAuthUrl,
+      'github-oauth',
+      'width=600,height=700,scrollbars=yes,resizable=yes'
+    )
+
+    if (!popup) {
+      setError('Popup blocked. Please allow popups and try again.')
+      setGithubConnecting(false)
+      return
+    }
+
+    // Listen for the OAuth callback
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+
+      if (event.data.type === 'GITHUB_OAUTH_SUCCESS') {
+        const { code, state: returnedState } = event.data
+
+        // Verify state parameter
+        if (!returnedState.includes(`org_${currentOrg.organization.id}`)) {
+          setError('Invalid OAuth state. Please try again.')
+          setGithubConnecting(false)
+          return
+        }
+
+        try {
+          // Exchange code for access token and save integration
+          const response = await fetch('/api/github/oauth', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              organization_id: currentOrg.organization.id,
+              code
+            })
+          })
+
+          const data = await response.json()
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to connect GitHub')
+          }
+
+          // Reload organization data to show the new integration
+          await loadOrganizationData()
+          popup.close()
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to connect GitHub')
+        } finally {
+          setGithubConnecting(false)
+        }
+      } else if (event.data.type === 'GITHUB_OAUTH_ERROR') {
+        setError(event.data.error || 'GitHub OAuth failed')
+        setGithubConnecting(false)
+        popup.close()
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+
+    // Clean up if popup is closed manually
+    const checkClosed = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(checkClosed)
+        window.removeEventListener('message', handleMessage)
+        setGithubConnecting(false)
+      }
+    }, 1000)
+  }
+
+  const disconnectGitHub = async (integrationId: string) => {
+    if (!currentOrg) return
+
+    try {
+      const response = await fetch(`/api/github/oauth/${integrationId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to disconnect GitHub')
+      }
+
+      // Reload organization data
+      await loadOrganizationData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to disconnect GitHub')
+    }
+  }
+
+  const syncRepositories = async (integrationId: string) => {
+    if (!currentOrg) return
+
+    try {
+      setError('')
+      const response = await fetch(`/api/github/sync-repositories`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          integration_id: integrationId,
+          organization_id: currentOrg.organization.id
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sync repositories')
+      }
+
+      // Reload organization data to show updated repositories
+      await loadOrganizationData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync repositories')
+    }
   }
 
   const getRoleIcon = (role: string) => {
@@ -429,7 +574,7 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle>GitHub Integration</CardTitle>
                 <CardDescription>
-                  Connect your GitHub account to sync repositories
+                  Connect your GitHub account to sync repositories and manage team access
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -440,15 +585,34 @@ export default function DashboardPage() {
                         <div className="flex items-center space-x-4">
                           <Github className="h-8 w-8" />
                           <div>
-                            <p className="font-medium">@{integration.github_username}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium">@{integration.github_username}</p>
+                              <Badge variant={integration.is_active ? "default" : "secondary"}>
+                                {integration.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </div>
                             <p className="text-sm text-gray-600">
-                              Status: {integration.is_active ? 'Active' : 'Inactive'}
+                              Connected {new Date(integration.created_at).toLocaleDateString()}
                             </p>
                           </div>
                         </div>
-                        <Button variant="outline" size="sm">
-                          Manage
-                        </Button>
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => syncRepositories(integration.id)}
+                          >
+                            Sync Repos
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => disconnectGitHub(integration.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Disconnect
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -459,9 +623,18 @@ export default function DashboardPage() {
                     <p className="text-gray-600 mb-4">
                       Connect your GitHub account to sync repositories and manage team access
                     </p>
-                    <Button onClick={connectGitHub}>
-                      <Github className="h-4 w-4 mr-2" />
-                      Connect GitHub
+                    <Button onClick={connectGitHub} disabled={githubConnecting}>
+                      {githubConnecting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <Github className="h-4 w-4 mr-2" />
+                          Connect GitHub
+                        </>
+                      )}
                     </Button>
                   </div>
                 )}
@@ -511,7 +684,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="text-center py-8 text-gray-500">
                     {githubIntegrations.length > 0
-                      ? "No repositories found. Make sure you have repositories in your connected GitHub account."
+                      ? "No repositories synced yet. Click 'Sync Repos' in the GitHub Integration tab."
                       : "Connect GitHub first to see your repositories."
                     }
                   </div>

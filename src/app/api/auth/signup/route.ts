@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
         data: {
           full_name,
           phone_number
-        }
+        },
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback`
       }
     })
 
@@ -126,11 +127,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine response based on whether user needs email confirmation
+    const needsEmailConfirmation = !authData.session && authData.user && !authData.user.email_confirmed_at
+
     // Create response
     const response = NextResponse.json({
       user: authData.user,
+      session: authData.session,
       organization: organizationData,
-      message: 'Account created successfully'
+      needsEmailConfirmation,
+      message: needsEmailConfirmation 
+        ? 'Account created successfully! Please check your email to confirm your account before signing in.'
+        : 'Account created and signed in successfully!'
     })
 
     // Set all cookies that Supabase wants to set

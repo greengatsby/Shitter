@@ -4,103 +4,98 @@ import { organizationHelpers, createServerSupabaseClient } from '@/utils/supabas
 // GET /api/organizations - Get user's organizations
 export async function GET(request: NextRequest) {
   try {
-    // Debug: Log cookies
-    console.log('Request cookies:', request.cookies.getAll())
-    
     const supabase = createServerSupabaseClient(request)
+    
+    // Get user from session
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    console.log('Auth result:', { user: user?.id, authError })
-
     if (authError || !user) {
+      console.error('Authentication failed:', {
+        authError: authError?.message,
+        hasUser: !!user,
+        cookies: request.cookies.getAll().map(c => ({ name: c.name, hasValue: !!c.value }))
+      })
       return NextResponse.json(
         { error: 'User not authenticated', debug: { authError: authError?.message } },
         { status: 401 }
       )
     }
 
-    console.log('About to query organization_members for user:', user.id)
-
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select(`
-        id,
-        role,
-        joined_at,
-        organization_id
-      `)
-      .eq('user_id', user.id)
-
-    console.log('Query result:', { 
-      data, 
-      error: error ? { message: error.message, details: error.details, hint: error.hint, code: error.code } : null, 
-      userId: user.id 
+    console.log('User authenticated successfully:', {
+      userId: user.id,
+      email: user.email,
+      profileName: user.user_metadata?.full_name
     })
 
-    if (error) {
-      console.error('Database error:', error)
+    // Verify user exists in our users table
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile) {
+      console.error('User profile not found:', {
+        userId: user.id,
+        profileError: profileError?.message
+      })
       return NextResponse.json(
-        { error: error.message, details: error },
-        { status: 400 }
+        { error: 'User profile not found', debug: { profileError: profileError?.message } },
+        { status: 404 }
       )
     }
 
-    return NextResponse.json({
-      organizations: data || []
-    })
+    console.log('User profile found:', profile)
+
+    // Get user's organizations using the server-side client
+    const { data: organizations, error: orgsError } = await organizationHelpers.getUserOrganizations(supabase)
+
+    if (orgsError) {
+      console.error('Error fetching organizations:', orgsError)
+      return NextResponse.json(
+        { error: 'Failed to fetch organizations', debug: { orgsError: orgsError.message } },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ organizations })
   } catch (error) {
-    console.error('Get organizations error:', error)
+    console.error('Error fetching organizations:', error)
     return NextResponse.json(
-      { error: 'An unexpected error occurred' },
+      { error: 'Internal server error', debug: { message: error instanceof Error ? error.message : 'Unknown error' } },
       { status: 500 }
     )
   }
 }
 
-// POST /api/organizations - Create new organization
+// POST /api/organizations - Create a new organization
 export async function POST(request: NextRequest) {
   try {
-    const { name, slug } = await request.json()
+    const supabase = createServerSupabaseClient(request)
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { name, slug } = body
 
     if (!name || !slug) {
-      return NextResponse.json(
-        { error: 'Organization name and slug are required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Name and slug are required' }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      )
-    }
-
-    const { data, error } = await supabase.rpc('create_organization_with_owner', {
-      org_name: name,
-      org_slug: slug,
-      owner_user_id: user.id
-    })
+    // Create organization using the server-side client
+    const { data, error } = await organizationHelpers.createOrganization(name, slug, user.id, supabase)
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      )
+      console.error('Error creating organization:', error)
+      return NextResponse.json({ error: 'Failed to create organization' }, { status: 500 })
     }
 
-    return NextResponse.json({
-      organization: data,
-      message: 'Organization created successfully'
-    })
+    return NextResponse.json({ organization: data })
   } catch (error) {
-    console.error('Organization creation error:', error)
-    return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
-    )
+    console.error('Error creating organization:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 } 

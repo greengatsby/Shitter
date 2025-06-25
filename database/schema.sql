@@ -126,6 +126,20 @@ CREATE TABLE user_repository_assignments (
     CONSTRAINT user_repository_assignments_updated_at_check CHECK (updated_at >= created_at)
 );
 
+-- Create processed messages table for SMS deduplication
+CREATE TABLE processed_messages (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    
+    message_id TEXT NOT NULL UNIQUE,
+    phone_number TEXT NOT NULL,
+    processed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    
+    -- Optional metadata
+    message_text TEXT,
+    user_id UUID REFERENCES users(id)
+);
+
 -- Create the main table for storing business ideas
 CREATE TABLE business_ideas (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -185,6 +199,8 @@ CREATE INDEX idx_github_integrations_org_id ON github_integrations(organization_
 CREATE INDEX idx_github_repositories_integration_id ON github_repositories(github_integration_id);
 CREATE INDEX idx_user_repository_assignments_user_id ON user_repository_assignments(user_id);
 CREATE INDEX idx_user_repository_assignments_repo_id ON user_repository_assignments(repository_id);
+CREATE INDEX idx_processed_messages_message_id ON processed_messages(message_id);
+CREATE INDEX idx_processed_messages_phone_number ON processed_messages(phone_number);
 
 -- Original business ideas indexes
 CREATE INDEX idx_business_ideas_created_at ON business_ideas(created_at DESC);
@@ -309,6 +325,9 @@ CREATE POLICY "Organization owners can update their organizations" ON organizati
         )
     );
 
+CREATE POLICY "Users can create organizations" ON organizations
+    FOR INSERT WITH CHECK (true);
+
 -- Users RLS
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
@@ -318,12 +337,17 @@ CREATE POLICY "Users can view their own profile" ON users
 CREATE POLICY "Users can update their own profile" ON users
     FOR UPDATE USING (auth.uid() = id);
 
+CREATE POLICY "Allow user profile creation" ON users
+    FOR INSERT WITH CHECK (auth.uid() = id);
+
 CREATE POLICY "Organization members can view other members" ON users
     FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM organization_members om1
+        auth.uid() = id OR
+        id IN (
+            SELECT DISTINCT om2.user_id
+            FROM organization_members om1
             JOIN organization_members om2 ON om1.organization_id = om2.organization_id
-            WHERE om1.user_id = auth.uid() AND om2.user_id = users.id
+            WHERE om1.user_id = auth.uid()
         )
     );
 
@@ -331,24 +355,19 @@ CREATE POLICY "Organization members can view other members" ON users
 ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Organization members can view their memberships" ON organization_members
-    FOR SELECT USING (
-        user_id = auth.uid() OR 
-        EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_id = organization_members.organization_id 
-            AND user_id = auth.uid()
-        )
-    );
+    FOR SELECT USING (user_id = auth.uid());
 
 CREATE POLICY "Organization admins can manage members" ON organization_members
     FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_id = organization_members.organization_id 
-            AND user_id = auth.uid()
-            AND role IN ('owner', 'admin')
+        user_id = auth.uid() OR
+        organization_id IN (
+            SELECT organization_id FROM organization_members 
+            WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
         )
     );
+
+CREATE POLICY "Allow organization member creation" ON organization_members
+    FOR INSERT WITH CHECK (true);
 
 -- GitHub integrations RLS
 ALTER TABLE github_integrations ENABLE ROW LEVEL SECURITY;

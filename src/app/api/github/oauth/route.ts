@@ -1,6 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { githubHelpers } from '@/utils/supabase'
 
+// Exchange GitHub OAuth code for access token
+async function exchangeCodeForToken(code: string): Promise<{
+  access_token: string;
+  token_type: string;
+  scope: string;
+}> {
+  const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET
+
+  if (!clientId || !clientSecret) {
+    throw new Error('GitHub OAuth not properly configured')
+  }
+
+  const response = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to exchange code for token')
+  }
+
+  const data = await response.json()
+  
+  if (data.error) {
+    throw new Error(data.error_description || data.error)
+  }
+
+  return data
+}
+
+// Get GitHub user info
+async function getGitHubUser(accessToken: string): Promise<{
+  id: number;
+  login: string;
+  name: string;
+  email: string;
+}> {
+  const response = await fetch('https://api.github.com/user', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to get GitHub user info')
+  }
+
+  return response.json()
+}
+
+// Get user repositories
+async function getGitHubRepositories(accessToken: string): Promise<any[]> {
+  const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to get GitHub repositories')
+  }
+
+  return response.json()
+}
+
 // POST /api/github/oauth - Handle GitHub OAuth callback
 export async function POST(request: NextRequest) {
   try {
@@ -21,23 +97,33 @@ export async function POST(request: NextRequest) {
     }
 
     let finalAccessToken = access_token
+    let userInfo = null
+    let userRepositories = []
     
-    // If code provided instead of access_token, exchange it
+    // If code provided, exchange it for access token
     if (code && !access_token) {
-      // In a real implementation, you'd exchange the code for an access_token here
-      // For now, we'll assume the access_token is provided directly
-      return NextResponse.json(
-        { error: 'GitHub OAuth code exchange not implemented. Please provide access_token directly.' },
-        { status: 400 }
-      )
+      try {
+        const tokenData = await exchangeCodeForToken(code)
+        finalAccessToken = tokenData.access_token
+
+        // Get user info and repositories
+        userInfo = await getGitHubUser(finalAccessToken)
+        userRepositories = await getGitHubRepositories(finalAccessToken)
+      } catch (error) {
+        console.error('GitHub OAuth error:', error)
+        return NextResponse.json(
+          { error: 'Failed to exchange code for access token' },
+          { status: 400 }
+        )
+      }
     }
 
     // Save GitHub integration
     const { data: integrationData, error: integrationError } = await githubHelpers.saveGitHubIntegration(
       organization_id,
       {
-        github_user_id,
-        github_username,
+        github_user_id: userInfo?.id || github_user_id,
+        github_username: userInfo?.login || github_username,
         access_token: finalAccessToken
       }
     )
@@ -49,12 +135,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Save repositories if provided
+    // Save repositories
     let repositoryData = null
-    if (repositories.length > 0 && integrationData?.[0]?.id) {
+    const reposToSave = userRepositories.length > 0 ? userRepositories : repositories
+    
+    if (reposToSave.length > 0 && integrationData?.[0]?.id) {
       const { data: repoData, error: repoError } = await githubHelpers.saveRepositories(
         integrationData[0].id,
-        repositories
+        reposToSave
       )
 
       if (repoError) {
@@ -78,7 +166,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/github/oauth - Get GitHub OAuth URL
+// GET /api/github/oauth - Get GitHub integrations and repositories
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)

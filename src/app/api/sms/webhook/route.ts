@@ -67,7 +67,7 @@ interface ClaudeResponse {
   result?: string;
 }
 
-async function sendToClaudeCode(prompt: string): Promise<ClaudeResponse> {
+async function sendToClaudeCode(prompt: string, userId?: string): Promise<ClaudeResponse> {
   try {
     const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/claude-code`, {
       method: 'POST',
@@ -76,9 +76,9 @@ async function sendToClaudeCode(prompt: string): Promise<ClaudeResponse> {
       },
       body: JSON.stringify({
         prompt: prompt.trim(),
-        outputFormat: 'text',
+        outputFormat: 'stream-json',
         maxTurns: 10,
-        continueConversation: false,
+        continue_conversation: true, // Enable session continuation for SMS
         verbose: false
       }),
     });
@@ -87,7 +87,78 @@ async function sendToClaudeCode(prompt: string): Promise<ClaudeResponse> {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    return await response.json();
+    // Handle Server-Sent Events (SSE) streaming response
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body reader available');
+    }
+
+    let finalResult = '';
+    let assistantMessages: string[] = [];
+    let success = false;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              // Collect assistant messages
+              if (data.type === 'assistant' && data.content) {
+                let contentText = '';
+                if (typeof data.content === 'string') {
+                  contentText = data.content;
+                } else if (Array.isArray(data.content)) {
+                  contentText = data.content
+                    .map((block: any) => {
+                      if (typeof block === 'string') return block;
+                      if (block?.text) return block.text;
+                      if (block?.type === 'text' && block?.text) return block.text;
+                      return '';
+                    })
+                    .join('');
+                } else if (data.content && typeof data.content === 'object' && data.content.text) {
+                  contentText = data.content.text;
+                }
+                if (contentText.trim()) {
+                  assistantMessages.push(contentText);
+                }
+              }
+              
+              // Handle completion event
+              if (data.success !== undefined) {
+                success = data.success;
+                if (data.final_result) {
+                  finalResult = data.final_result;
+                }
+              }
+            } catch (parseError) {
+              // Skip malformed JSON lines
+              console.log('Skipping malformed SSE data:', line);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Combine all assistant messages
+    const combinedResponse = assistantMessages.join(' ').trim();
+    
+    return {
+      success: success,
+      content: combinedResponse || finalResult,
+      result: combinedResponse || finalResult
+    };
+
   } catch (error) {
     console.error('Claude API error:', error);
     return {
@@ -106,15 +177,38 @@ export async function POST(request: NextRequest) {
     
     if (data?.event_type === 'message.received') {
       const message = data.payload
+      const messageId = message.id
       const fromNumber = message.from.phone_number
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
       
       console.log(`Message received from ${fromNumber}:`, {
+        messageId,
         text: messageText,
         hasMedia,
         mediaCount: hasMedia ? message.media.length : 0
       })
+      
+      // Check if we've already processed this message ID to prevent duplicates
+      const { data: existingMessage } = await supabaseAdmin
+        .from('processed_messages')
+        .select('id')
+        .eq('message_id', messageId)
+        .single()
+      
+      if (existingMessage) {
+        console.log(`Message ${messageId} already processed, skipping`)
+        return NextResponse.json({ success: true, message: 'Already processed' })
+      }
+      
+      // Mark message as being processed
+      await supabaseAdmin
+        .from('processed_messages')
+        .insert({
+          message_id: messageId,
+          phone_number: fromNumber,
+          processed_at: new Date().toISOString()
+        })
       
       // Check if sender is a valid user
       const { data: user, error: userError } = await supabaseAdmin
@@ -239,7 +333,7 @@ async function sendSMS(toNumber: string, message: string) {
 // Process coding-related messages through Claude Code SDK
 async function processCodingMessage(message: string, user: any) {
   try {
-    const claudeResponse = await sendToClaudeCode(message)
+    const claudeResponse = await sendToClaudeCode(message, user.id)
     
     let responseText = ''
     if (claudeResponse.success) {
@@ -266,7 +360,7 @@ async function processCodingMessage(message: string, user: any) {
 async function processUnifiedMessage(message: string, user: any) {
   try {
     // For now, route everything to Claude Code SDK for simplicity
-    const claudeResponse = await sendToClaudeCode(message)
+    const claudeResponse = await sendToClaudeCode(message, user.id)
     
     let responseText = ''
     if (claudeResponse.success) {
