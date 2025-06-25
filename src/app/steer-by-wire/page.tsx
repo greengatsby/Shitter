@@ -61,12 +61,15 @@ export default function ClaudeTestPage() {
   const [streamSessionId, setStreamSessionId] = useState<string>('');
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const [debugEditOutput, setDebugEditOutput] = useState<string[]>([]);
+  const [claudeReadinessStatus, setClaudeReadinessStatus] = useState<'gathering_info' | 'needs_more_info' | 'ready_to_proceed' | 'working' | 'awaiting_prod_confirmation' | null>(null);
+  const [deployLoading, setDeployLoading] = useState(false);
+  const deployTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Settings state
   const [settings, setSettings] = useState<RequestSettings>({
     outputFormat: 'json',
     sessionId: '',
-    continueConversation: false,
+    continueConversation: true, // Always enabled for automatic session continuation
     systemPrompt: '',
     appendSystemPrompt: '',
     allowedTools: '',
@@ -76,6 +79,7 @@ export default function ClaudeTestPage() {
   });
 
   const responseRef = useRef<HTMLDivElement>(null);
+  const deploymentCardRef = useRef<HTMLDivElement>(null);
   const CLAUDE_API = '/api/claude-code';
 
   // Helper function to extract text content from Claude messages
@@ -115,6 +119,13 @@ export default function ClaudeTestPage() {
       responseRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [response]);
+
+  // Auto-scroll to deployment card when it appears
+  useEffect(() => {
+    if (claudeReadinessStatus === 'awaiting_prod_confirmation' && deploymentCardRef.current) {
+      deploymentCardRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [claudeReadinessStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,12 +240,28 @@ export default function ClaudeTestPage() {
   }, [eventSource]);
 
   // Claude Code SDK streaming
+  // Helper function to stream with a specific prompt (for programmatic usage)
+  const handleClaudeCodeStreamingWithPrompt = async (specificPrompt: string) => {
+    if (!specificPrompt.trim()) {
+      toast.error('Please enter a prompt');
+      return;
+    }
+    
+    return await executeClaudeCodeStreaming(specificPrompt);
+  };
+
   const handleClaudeCodeStreaming = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) {
       toast.error('Please enter a prompt');
       return;
     }
+    
+    return await executeClaudeCodeStreaming(prompt);
+  };
+
+  // Core streaming logic extracted to avoid duplication
+  const executeClaudeCodeStreaming = async (promptToUse: string) => {
 
     // Close existing EventSource if any
     if (eventSource) {
@@ -246,23 +273,47 @@ export default function ClaudeTestPage() {
     setStreamOutput([]);
     setResponse(null);
     setDebugEditOutput([]);
+    setClaudeReadinessStatus('gathering_info');
 
     try {
       // Build request body for Claude Code API
+      // Use streamSessionId (most recent) or settings.sessionId (user-specified) for continuation
+      const activeSessionId = streamSessionId || settings.sessionId;
+      
       const requestBody = {
-        prompt: prompt.trim(),
+        prompt: promptToUse.trim(),
         maxTurns: settings.maxTurns,
         outputFormat: 'stream-json',
         verbose: true,
-        // Include session management
-        ...(settings.sessionId && { session_id: settings.sessionId }),
-        ...(settings.continueConversation && { continue_conversation: true }),
+        // Session management logic: 
+        // 1. If we have a session ID, try to resume (but SDK might ignore it)
+        // 2. If we have no session ID but have had previous conversations, continue recent
+        // 3. If this is the very first conversation, start fresh (no flags)
+        // Note: Claude Code SDK sometimes ignores resume and creates new sessions
+        ...(activeSessionId 
+          ? { session_id: activeSessionId } 
+          : streamSessionId // Only use continue if we've had a session before
+            ? { continue_conversation: true }
+            : {} // Fresh start - no session flags
+        ),
         // Include optional parameters only if they have values
         ...(settings.systemPrompt && { systemPrompt: settings.systemPrompt }),
         ...(settings.appendSystemPrompt && { appendSystemPrompt: settings.appendSystemPrompt }),
         ...(settings.allowedTools && { allowedTools: settings.allowedTools }),
         ...(settings.disallowedTools && { disallowedTools: settings.disallowedTools }),
       };
+
+      // Log session information for debugging
+      console.log('Session Management:', {
+        streamSessionId,
+        settingsSessionId: settings.sessionId,
+        activeSessionId,
+        requestMode: activeSessionId ? 'resume_specific_session' : 
+                     streamSessionId ? 'continue_recent_session' : 'fresh_start',
+        hasSessionId: !!(requestBody as any).session_id,
+        hasContinueConversation: !!(requestBody as any).continue_conversation,
+        isFirstConversation: !streamSessionId && !settings.sessionId
+      });
 
       setStreamOutput(prev => [...prev, `🚀 [${new Date().toLocaleTimeString()}] Starting Claude Code stream...`]);
       console.log('Starting Claude Code stream with request:', requestBody);
@@ -443,14 +494,36 @@ export default function ClaudeTestPage() {
                       if (textContent.length > 0) {
                         const text = textContent.map((c: any) => c.text).join('');
                         if (text.trim()) {
-                          setStreamOutput(prev => [...prev, `🤖 [${timestamp}] Claude: ${text}`]);
+                          // Check if this is an API error message
+                          if (text.includes('API Error:') || text.includes('"type":"error"')) {
+                            setStreamOutput(prev => [...prev, `❌ [${timestamp}] ${text}`]);
+                            toast.error('Claude encountered an API error');
+                            
+                            // Stop streaming on API error
+                            setStreaming(false);
+                            setDeployLoading(false);
+                            setClaudeReadinessStatus(null);
+                          } else {
+                            setStreamOutput(prev => [...prev, `🤖 [${timestamp}] Claude: ${text}`]);
+                          }
                         }
                       }
                       break;
                     case 'result':
-                      setStreamOutput(prev => [...prev, `✨ [${timestamp}] ${data.result || 'Task completed'}`]);
-                      if (settings.verbose && data.duration_ms && data.total_cost_usd) {
-                        setStreamOutput(prev => [...prev, `   💰 ${data.duration_ms}ms • $${data.total_cost_usd.toFixed(4)}`]);
+                      // Check if this is an error result
+                      if (data.is_error) {
+                        setStreamOutput(prev => [...prev, `❌ [${timestamp}] Error: ${data.result || 'Task failed'}`]);
+                        toast.error(`Task failed: ${data.result || 'Unknown error'}`);
+                        
+                        // Stop streaming on error result
+                        setStreaming(false);
+                        setDeployLoading(false);
+                        setClaudeReadinessStatus(null);
+                      } else {
+                        setStreamOutput(prev => [...prev, `✨ [${timestamp}] ${data.result || 'Task completed'}`]);
+                        if (settings.verbose && data.duration_ms && data.total_cost_usd) {
+                          setStreamOutput(prev => [...prev, `   💰 ${data.duration_ms}ms • $${data.total_cost_usd.toFixed(4)}`]);
+                        }
                       }
                       
                       // Set the final response
@@ -501,10 +574,57 @@ export default function ClaudeTestPage() {
                     setConversations(prev => [conversationEntry, ...prev]);
                   }
 
+                  // Reset all streaming states
                   setStreaming(false);
+                  setDeployLoading(false);
+                  
+                  // Clear deploy timeout if it exists
+                  if (deployTimeoutRef.current) {
+                    clearTimeout(deployTimeoutRef.current);
+                    deployTimeoutRef.current = null;
+                  }
+                  
                   setPrompt('');
-                  toast.success('Conversation completed!');
+                  
+                  // Show appropriate completion message
+                  if (data.success === false || (finalClaudeResponse && finalClaudeResponse.is_error)) {
+                    toast.error('Conversation completed with errors');
+                  } else {
+                    toast.success('Conversation completed!');
+                  }
                   return; // Exit the while loop
+
+                case 'readiness_status':
+                  if (data.status === 'ready_to_proceed') {
+                    setClaudeReadinessStatus('ready_to_proceed');
+                    setStreamOutput(prev => [...prev, `🚀 [${timestamp}] Claude is ready to proceed with the task!`]);
+                    toast.success('Claude has enough context and is starting work!');
+                    
+                    // After a brief moment, update to working status
+                    setTimeout(() => {
+                      setClaudeReadinessStatus('working');
+                    }, 1000);
+                  }
+                  break;
+
+                case 'needs_info_status':
+                  if (data.status === 'needs_more_info') {
+                    setClaudeReadinessStatus('needs_more_info');
+                    setStreamOutput(prev => [...prev, `❓ [${timestamp}] Claude needs more information to proceed`]);
+                    toast.info('Claude is asking for more details');
+                  }
+                  break;
+
+                case 'confirm_to_prod_status':
+                  if (data.status === 'awaiting_prod_confirmation') {
+                    setClaudeReadinessStatus('awaiting_prod_confirmation');
+                    setDeployLoading(false); // Reset deploy loading state
+                    setStreamOutput(prev => [...prev, `🚀 [${timestamp}] Changes committed and pushed to dev branch - awaiting confirmation to deploy to production`]);
+                    toast.success('Changes pushed to dev branch!', {
+                      description: 'Review the changes on GitHub and confirm deployment when ready'
+                    });
+                  }
+                  break;
 
                 case 'error':
                   setStreamOutput(prev => [...prev, `❌ [${timestamp}] ${data.error || 'Something went wrong'}`]);
@@ -512,6 +632,11 @@ export default function ClaudeTestPage() {
                     setStreamOutput(prev => [...prev, `   🔍 ${data.details}`]);
                   }
                   toast.error(`Error: ${data.error || 'Unknown error'}`);
+                  
+                  // Stop streaming on error
+                  setStreaming(false);
+                  setDeployLoading(false);
+                  setClaudeReadinessStatus(null);
                   break;
 
                 default:
@@ -532,6 +657,7 @@ export default function ClaudeTestPage() {
       console.error('Claude Code streaming error:', error);
       setStreamOutput(prev => [...prev, `❌ Setup failed: ${errorMessage}`]);
       setStreaming(false);
+      setDeployLoading(false); // Reset deploy loading state on error
       toast.error(`Streaming failed: ${errorMessage}`);
     }
   };
@@ -678,24 +804,6 @@ export default function ClaudeTestPage() {
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Button 
-                        type="submit" 
-                        disabled={loading || streaming || !prompt.trim()}
-                        onClick={handleSubmit}
-                      >
-                        {loading ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Send Request
-                          </>
-                        )}
-                      </Button>
-                      
-                      <Button 
                         type="button"
                         variant="outline"
                         disabled={loading || !prompt.trim()}
@@ -723,6 +831,99 @@ export default function ClaudeTestPage() {
               </CardContent>
             </Card>
 
+            {/* Production Deployment Confirmation */}
+            {claudeReadinessStatus === 'awaiting_prod_confirmation' && (
+              <Card className="border-purple-200 bg-purple-50" ref={deploymentCardRef}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-purple-800">
+                    🚀 Ready for Production Deployment
+                    <Badge variant="default" className="bg-purple-100 text-purple-800">
+                      Dev → Main
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription className="text-purple-700">
+                    Changes have been committed and pushed to the dev branch. Review the changes on GitHub and confirm to deploy to main/production.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex gap-2 flex-wrap">
+                      <Button 
+                        onClick={() => {
+                          setDeployLoading(true);
+                          
+                          // Use a small delay to ensure state updates have been processed
+                          setTimeout(() => {
+                            // Directly call the streaming function with the deploy prompt
+                            handleClaudeCodeStreamingWithPrompt("Yes, deploy to production. Push the changes to main branch.");
+                          }, 50); // Small delay to ensure UI updates
+                        }}
+                        className="bg-purple-600 hover:bg-purple-700"
+                        disabled={streaming || deployLoading}
+                      >
+                        {deployLoading ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                            Deploying...
+                          </>
+                        ) : (
+                          <>
+                            ✅ Deploy to Production
+                          </>
+                        )}
+                      </Button>
+                      
+                      {deployLoading && (
+                        <Button 
+                          variant="destructive"
+                          onClick={() => {
+                            setDeployLoading(false);
+                            setStreaming(false);
+                            if (deployTimeoutRef.current) {
+                              clearTimeout(deployTimeoutRef.current);
+                              deployTimeoutRef.current = null;
+                            }
+                            toast.info("Deployment cancelled. You can try again.");
+                          }}
+                        >
+                          ❌ Cancel Deployment
+                        </Button>
+                      )}
+                      
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          // This will be implemented later for reverting commits
+                          toast.info("Revert functionality coming soon");
+                        }}
+                        disabled={true}
+                        className="opacity-50 cursor-not-allowed"
+                      >
+                        🔄 Revert Commit & Start Again
+                      </Button>
+                      <Button 
+                        variant="secondary"
+                        asChild
+                        className="bg-blue-100 hover:bg-blue-200 text-blue-800"
+                      >
+                        <a 
+                          href="https://calculator-steer-by-wire-test-git-dev-dane-myers-projects.vercel.app/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2"
+                        >
+                          🌐 View changes in live app
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             
                           {/* Streaming Output Display */}
               {(streaming || streamOutput.length > 0) && (
@@ -737,6 +938,24 @@ export default function ClaudeTestPage() {
                       {streamSessionId && (
                         <Badge variant="default" className="font-mono text-xs">
                           Session: {streamSessionId.slice(0, 8)}...
+                        </Badge>
+                      )}
+                      {claudeReadinessStatus && (
+                        <Badge 
+                          variant={claudeReadinessStatus === 'ready_to_proceed' ? 'default' : claudeReadinessStatus === 'working' ? 'secondary' : claudeReadinessStatus === 'awaiting_prod_confirmation' ? 'default' : 'outline'} 
+                          className={`text-xs font-medium ${
+                            claudeReadinessStatus === 'gathering_info' ? 'bg-yellow-100 text-yellow-800' :
+                            claudeReadinessStatus === 'needs_more_info' ? 'bg-orange-100 text-orange-800' :
+                            claudeReadinessStatus === 'ready_to_proceed' ? 'bg-green-100 text-green-800' :
+                            claudeReadinessStatus === 'working' ? 'bg-blue-100 text-blue-800' :
+                            claudeReadinessStatus === 'awaiting_prod_confirmation' ? 'bg-purple-100 text-purple-800' : ''
+                          }`}
+                        >
+                          {claudeReadinessStatus === 'gathering_info' ? '🤔 Gathering Info' :
+                           claudeReadinessStatus === 'needs_more_info' ? '❓ Needs More Info' :
+                           claudeReadinessStatus === 'ready_to_proceed' ? '🚀 Ready to Proceed' :
+                           claudeReadinessStatus === 'working' ? '⚡ Working' :
+                           claudeReadinessStatus === 'awaiting_prod_confirmation' ? '🚀 Ready for Production' : ''}
                         </Badge>
                       )}
                     </CardTitle>
@@ -957,23 +1176,46 @@ export default function ClaudeTestPage() {
 
                     <div>
                       <Label htmlFor="sessionId">Session ID</Label>
-                      <Input
-                        id="sessionId"
-                        value={settings.sessionId}
-                        onChange={(e) => setSettings(prev => ({ ...prev, sessionId: e.target.value }))}
-                        placeholder="Enter session ID to resume..."
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          id="sessionId"
+                          value={settings.sessionId}
+                          onChange={(e) => setSettings(prev => ({ ...prev, sessionId: e.target.value }))}
+                          placeholder="Enter session ID to resume..."
+                          className="flex-1"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSettings(prev => ({ ...prev, sessionId: '' }));
+                            setStreamSessionId('');
+                            toast.success('Session cleared');
+                          }}
+                          disabled={!settings.sessionId && !streamSessionId}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                      {streamSessionId && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Current session: <code>{streamSessionId.slice(0, 8)}...</code>
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-2">
                       <Switch
                         id="continueConversation"
-                        checked={settings.continueConversation}
-                        onCheckedChange={(checked) => 
-                          setSettings(prev => ({ ...prev, continueConversation: checked }))
-                        }
+                        checked={true}
+                        onCheckedChange={() => {}} // No-op function
+                        disabled={true}
+                        className="opacity-75"
                       />
-                      <Label htmlFor="continueConversation">Continue Recent Conversation</Label>
+                      <Label htmlFor="continueConversation" className="text-muted-foreground">
+                        Continue Recent Conversation
+                        <span className="text-xs block">Always enabled - sessions continue automatically</span>
+                      </Label>
                     </div>
 
                     <div>
