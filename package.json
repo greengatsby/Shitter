@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "ngrok:start": "ngrok http 3000 --url=safe-slug-cool.ngrok-free.app"
+    "ngrok": "ngrok http http://localhost:3000 --domain=roley.ngrok.app"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.31",
@@ -40,6 +40,7 @@
     "@radix-ui/react-toggle-group": "^1.1.2",
     "@radix-ui/react-tooltip": "^1.1.8",
     "@shadcn/ui": "^0.0.4",
+    "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.1",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
@@ -62,6 +63,8 @@
     "sonner": "^2.0.1",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7",
+    "telnyx": "^2.0.0",
+    "twilio": "^5.7.1",
     "vaul": "^1.1.2",
     "zod": "^3.24.2"
   },
