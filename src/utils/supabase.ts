@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Client-side Supabase client (can be used in client components)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Server-side Supabase client that can read cookies
+// Server-side Supabase client factory (for use in Server Components and API routes)
 export function createServerSupabaseClient(request?: NextRequest) {
   if (request) {
     // For API routes with request object
@@ -26,25 +26,12 @@ export function createServerSupabaseClient(request?: NextRequest) {
       },
     });
   } else {
-    // For server components
-    const cookieStore = cookies();
-    return createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: '', ...options });
-        },
-      },
-    });
+    // For server components - this should be imported separately
+    throw new Error('Use createServerSupabaseClientWithCookies for Server Components');
   }
 }
 
-// Auth helpers
+// Auth helpers (client-side compatible)
 export const authHelpers = {
   async signUp(email: string, password: string, metadata: { full_name?: string; phone_number?: string } = {}) {
     const { data, error } = await supabase.auth.signUp({
@@ -201,13 +188,23 @@ export const githubHelpers = {
     github_username: string;
     access_token: string;
   }) {
+    // Get the current user's ID
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      throw new Error('User not authenticated');
+    }
+
     const { data, error } = await supabase
       .from('github_integrations')
-      .upsert({
+      .insert({
         organization_id: organizationId,
-        ...githubData
+        user_id: user.id,
+        github_user_id: githubData.github_user_id,
+        github_username: githubData.github_username,
+        access_token: githubData.access_token
       })
-      .select();
+      .select()
+      .single();
 
     return { data, error };
   },
@@ -216,8 +213,7 @@ export const githubHelpers = {
     const { data, error } = await supabase
       .from('github_integrations')
       .select('*')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true);
+      .eq('organization_id', organizationId);
 
     return { data, error };
   },
@@ -225,30 +221,35 @@ export const githubHelpers = {
   async disconnectGitHubIntegration(integrationId: string) {
     const { data, error } = await supabase
       .from('github_integrations')
-      .update({ is_active: false })
-      .eq('id', integrationId)
-      .select();
+      .delete()
+      .eq('id', integrationId);
 
     return { data, error };
   },
 
   async saveRepositories(integrationId: string, repositories: any[]) {
-    const repoData = repositories.map(repo => ({
-      github_integration_id: integrationId,
+    // First, remove existing repositories for this integration
+    await supabase
+      .from('github_repositories')
+      .delete()
+      .eq('integration_id', integrationId);
+
+    // Then insert new repositories
+    const repositoryData = repositories.map(repo => ({
+      integration_id: integrationId,
       github_repo_id: repo.id,
       name: repo.name,
       full_name: repo.full_name,
-      description: repo.description,
       private: repo.private,
-      html_url: repo.html_url
+      html_url: repo.html_url,
+      description: repo.description,
+      language: repo.language,
+      default_branch: repo.default_branch
     }));
 
     const { data, error } = await supabase
       .from('github_repositories')
-      .upsert(repoData, { 
-        onConflict: 'github_integration_id,github_repo_id',
-        ignoreDuplicates: false 
-      })
+      .insert(repositoryData)
       .select();
 
     return { data, error };
@@ -259,46 +260,51 @@ export const githubHelpers = {
       .from('github_repositories')
       .select(`
         *,
-        github_integration:github_integrations!inner(
+        integration:github_integrations!inner(
           organization_id,
           github_username
         )
       `)
-      .eq('github_integration.organization_id', organizationId)
-      .eq('is_active', true);
+      .eq('integration.organization_id', organizationId);
 
     return { data, error };
   },
 
   async assignUserToRepository(repositoryId: string, userId: string, role: string = 'developer') {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
     const { data, error } = await supabase
-      .from('user_repository_assignments')
-      .upsert({
-        user_id: userId,
+      .from('repository_assignments')
+      .insert({
         repository_id: repositoryId,
-        assigned_by: user.id,
-        role
+        user_id: userId,
+        role: role
       })
-      .select();
+      .select()
+      .single();
+
+    if (error && error.code === '23505') { // Unique constraint violation
+      // Update existing assignment
+      const { data: updateData, error: updateError } = await supabase
+        .from('repository_assignments')
+        .update({ role })
+        .eq('repository_id', repositoryId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      return { data: updateData, error: updateError };
+    }
 
     return { data, error };
   },
 
   async getUserRepositoryAssignments(userId: string) {
     const { data, error } = await supabase
-      .from('user_repository_assignments')
+      .from('repository_assignments')
       .select(`
         *,
         repository:github_repositories(
-          id,
-          name,
-          full_name,
-          description,
-          html_url,
-          github_integration:github_integrations(
+          *,
+          integration:github_integrations(
             github_username,
             organization_id
           )
@@ -310,74 +316,65 @@ export const githubHelpers = {
   }
 };
 
-// Phone verification helpers
-export const phoneHelpers = {
+// SMS verification helpers
+export const smsHelpers = {
   async sendVerificationCode(phoneNumber: string) {
-    // This would integrate with your SMS service (Telnyx/Twilio)
-    // For now, we'll generate a code and store it in the database
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    try {
+      const response = await fetch('/api/sms/send-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phoneNumber }),
+      });
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send verification code');
+      }
 
-    const { error } = await supabase
-      .from('users')
-      .update({
-        phone_verification_code: code,
-        phone_verification_expires_at: expiresAt.toISOString()
-      })
-      .eq('id', user.id);
-
-    if (error) return { success: false, error };
-
-    // TODO: Send SMS with code using your SMS service
-    console.log(`Verification code for ${phoneNumber}: ${code}`);
-    
-    return { success: true, code }; // Remove code from response in production
+      return { success: true, data };
+    } catch (error) {
+      console.error('Error sending verification code:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   },
 
   async verifyPhoneNumber(code: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+    try {
+      const response = await fetch('/api/sms/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      });
 
-    const { data: userData, error: fetchError } = await supabase
-      .from('users')
-      .select('phone_verification_code, phone_verification_expires_at')
-      .eq('id', user.id)
-      .single();
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to verify phone number');
+      }
 
-    if (fetchError || !userData) {
-      return { success: false, error: 'User data not found' };
+      // Update user profile with verified phone number
+      if (data.phoneNumber) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from('users')
+            .update({ 
+              phone_number: data.phoneNumber,
+              phone_verified: true 
+            })
+            .eq('id', user.id);
+        }
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      console.error('Error verifying phone number:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
-
-    const now = new Date();
-    const expiresAt = new Date(userData.phone_verification_expires_at);
-
-    if (now > expiresAt) {
-      return { success: false, error: 'Verification code expired' };
-    }
-
-    if (userData.phone_verification_code !== code) {
-      return { success: false, error: 'Invalid verification code' };
-    }
-
-    // Mark phone as verified
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({
-        phone_verified: true,
-        phone_verification_code: null,
-        phone_verification_expires_at: null
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      return { success: false, error: updateError.message };
-    }
-
-    return { success: true };
   }
 };
-
-export default supabase;
