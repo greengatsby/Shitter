@@ -29,16 +29,40 @@ interface EndpointStatus {
   status: string;
 }
 
+interface ReceivedMessage {
+  id: number;
+  message_id: string;
+  from_number: string;
+  to_number: string;
+  message_text: string;
+  has_media: boolean;
+  media_data: any;
+  received_at: string;
+  created_at: string;
+}
+
 export default function SMSTestPage() {
   const [message, setMessage] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [endpointStatus, setEndpointStatus] = useState<EndpointStatus | null>(null);
+  const [receivedMessages, setReceivedMessages] = useState<ReceivedMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
 
-  // Load endpoint status on mount
+  // Load endpoint status and received messages on mount
   useEffect(() => {
     loadEndpointStatus();
+    loadReceivedMessages();
+  }, []);
+
+  // Auto-refresh received messages every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadReceivedMessages();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const loadEndpointStatus = async () => {
@@ -53,6 +77,22 @@ export default function SMSTestPage() {
       }
     } catch (error) {
       console.error('Failed to load endpoint status:', error);
+    }
+  };
+
+  const loadReceivedMessages = async () => {
+    setLoadingMessages(true);
+    try {
+      const response = await fetch('/api/sms/test/conversation');
+      const data = await response.json();
+      
+      if (data.messages) {
+        setReceivedMessages(data.messages);
+      }
+    } catch (error) {
+      console.error('Failed to load received messages:', error);
+    } finally {
+      setLoadingMessages(false);
     }
   };
 
@@ -182,7 +222,7 @@ export default function SMSTestPage() {
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-2 gap-8">
+        <div className="grid lg:grid-cols-3 gap-8">
           {/* Test Message Form */}
           <div className="space-y-6">
             <Card>
@@ -370,7 +410,7 @@ export default function SMSTestPage() {
                   <p>
                     <strong>2.</strong> The message will be sent from your test number
                     <Badge variant="outline" className="mx-1 font-mono text-xs">
-                      +1-628-221-0583
+                      +16288959010
                     </Badge>
                     to your main webhook number
                   </p>
@@ -392,6 +432,134 @@ export default function SMSTestPage() {
                     <li>• Coding questions</li>
                     <li>• General conversation</li>
                   </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Received Messages */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    Received Messages
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadReceivedMessages}
+                    disabled={loadingMessages}
+                  >
+                    {loadingMessages ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Refresh'
+                    )}
+                  </Button>
+                </div>
+                <CardDescription>
+                  Messages received by your webhook endpoint
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {receivedMessages.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {loadingMessages ? 'Loading messages...' : 'No messages received yet'}
+                  </div>
+                ) : (
+                  <ScrollArea className="h-96">
+                    <div className="space-y-4">
+                      {receivedMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className="p-4 border rounded-lg bg-blue-50 border-blue-200"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default">Received</Badge>
+                              {message.has_media && (
+                                <Badge variant="secondary">+Media</Badge>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(message.created_at).toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-xs font-medium text-muted-foreground">From:</span>
+                              <span className="ml-2 text-sm font-mono">{message.from_number}</span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-medium text-muted-foreground">To:</span>
+                              <span className="ml-2 text-sm font-mono">{message.to_number}</span>
+                            </div>
+                            {message.message_text && (
+                              <div>
+                                <span className="text-xs font-medium text-muted-foreground">Message:</span>
+                                <p className="text-sm mt-1 p-2 bg-white rounded border">
+                                  {message.message_text}
+                                </p>
+                              </div>
+                            )}
+                            {message.has_media && message.media_data && (
+                              <div>
+                                <span className="text-xs font-medium text-muted-foreground">Media:</span>
+                                <p className="text-xs mt-1 p-2 bg-gray-100 rounded font-mono">
+                                  {JSON.stringify(message.media_data, null, 2)}
+                                </p>
+                              </div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                              Message ID: {message.message_id}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Real-time Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Live Monitoring</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span>Total Messages:</span>
+                    <Badge variant="outline">{receivedMessages.length}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Auto-refresh:</span>
+                    <Badge variant="default">Every 5s</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Endpoint:</span>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      /api/sms/test/conversation
+                    </Badge>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="text-sm">
+                  <p className="font-medium mb-2">To test webhook:</p>
+                  <ol className="text-muted-foreground space-y-1 text-xs">
+                    <li>1. Send SMS to +16288959010</li>
+                    <li>2. Watch for messages to appear above</li>
+                    <li>3. You'll get an auto-reply confirmation</li>
+                  </ol>
                 </div>
               </CardContent>
             </Card>

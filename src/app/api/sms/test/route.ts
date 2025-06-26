@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const TEST_PHONE_NUMBER = '+16282210583' // Test number for sending
+const TEST_PHONE_NUMBER = '+16288959010' // Test number for sending
 const MAIN_PHONE_NUMBER = process.env.TELNYX_PHONE_NUMBER // Main number that receives (from env)
 
 export async function POST(request: NextRequest) {

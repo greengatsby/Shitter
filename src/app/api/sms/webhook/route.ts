@@ -77,7 +77,7 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
       body: JSON.stringify({
         prompt: prompt.trim(),
         outputFormat: 'stream-json',
-        maxTurns: 10,
+        maxTurns: 50,
         continue_conversation: true, // Enable session continuation for SMS
         verbose: false
       }),
@@ -95,6 +95,8 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
 
     let finalResult = '';
     let assistantMessages: string[] = [];
+    // final resp will be the last, any last message that is a result. the final message
+    let finalResp
     let success = false;
 
     try {
@@ -109,6 +111,15 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
+              
+              // Debug: Log all events
+              console.log('SMS DEBUG: SSE Event', {
+                type: data.type,
+                hasContent: !!data.content,
+                contentPreview: data.content ? JSON.stringify(data.content).slice(0, 100) : 'none',
+                hasResult: !!data.result,
+                resultPreview: data.result ? JSON.stringify(data.result).slice(0, 100) : 'none'
+              });
               
               // Collect assistant messages
               if (data.type === 'assistant' && data.content) {
@@ -129,14 +140,33 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
                 }
                 if (contentText.trim()) {
                   assistantMessages.push(contentText);
+                  
+                  // If this message contains the approval prompt, use only this message
+                  if (contentText.includes('Changes Applied Successfully! Approve these changes')) {
+                    console.log('SMS: Found approval prompt, using only this message');
+                    assistantMessages = [contentText]; // Replace all previous messages with just this one
+                  }
                 }
               }
               
               // Handle completion event
               if (data.success !== undefined) {
                 success = data.success;
+                console.log('SMS DEBUG: Completion event', {
+                  success: data.success,
+                  hasFinalResult: !!data.final_result,
+                  finalResultType: typeof data.final_result,
+                  finalResultPreview: data.final_result ? JSON.stringify(data.final_result).slice(0, 200) : 'none'
+                });
+                
                 if (data.final_result) {
                   finalResult = data.final_result;
+                  finalResp = data.final_result;
+                  // Also check final result for approval prompt
+                  if (typeof finalResult === 'string' && finalResult.includes('Changes Applied Successfully! Approve these changes')) {
+                    console.log('SMS: Found approval prompt in final result, using only this');
+                    assistantMessages = [finalResult]; // Use only the final result
+                  }
                 }
               }
             } catch (parseError) {
@@ -153,10 +183,18 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
     // Combine all assistant messages
     const combinedResponse = assistantMessages.join(' ').trim();
     
+    console.log('SMS DEBUG: Final processing', {
+      assistantMessagesCount: assistantMessages.length,
+      assistantMessages: assistantMessages,
+      finalResult: finalResult,
+      combinedResponse: combinedResponse,
+      finalToSend: combinedResponse || finalResult
+    });
+    
     return {
       success: success,
       content: combinedResponse || finalResult,
-      result: combinedResponse || finalResult
+      result: combinedResponse
     };
 
   } catch (error) {
@@ -171,7 +209,7 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('Telnyx SMS webhook received:', body)
+    // console.log('Telnyx SMS webhook received:')
 
     const { data } = body
     
@@ -182,12 +220,12 @@ export async function POST(request: NextRequest) {
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
       
-      console.log(`Message received from ${fromNumber}:`, {
-        messageId,
-        text: messageText,
-        hasMedia,
-        mediaCount: hasMedia ? message.media.length : 0
-      })
+      // console.log(`Message received from ${fromNumber}:`, {
+      //   messageId,
+      //   text: messageText,
+      //   hasMedia,
+      //   mediaCount: hasMedia ? message.media.length : 0
+      // })
       
       // Check if we've already processed this message ID to prevent duplicates
       const { data: existingMessage } = await supabaseAdmin
@@ -198,8 +236,10 @@ export async function POST(request: NextRequest) {
       
       if (existingMessage) {
         console.log(`Message ${messageId} already processed, skipping`)
-        return NextResponse.json({ success: true, message: 'Already processed' })
+        return NextResponse.json({ success: true, message: 'Already processed msg' })
       }
+
+        
       
       // Mark message as being processed
       await supabaseAdmin
@@ -218,7 +258,7 @@ export async function POST(request: NextRequest) {
         .single()
       
       if (!user) {
-        console.log('Message from unknown user:', fromNumber)
+        // console.log('Message from unknown user:', fromNumber)
         await sendSMS(fromNumber, "Hi! I don't have you in my system yet. Please contact support to get set up.")
         return NextResponse.json({ success: true })
       }
@@ -282,6 +322,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Telnyx SMS webhook error:', error)
@@ -300,8 +342,13 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// Helper function to send SMS via Telnyx
+// Helper function to send SMS via Telnyx with smart truncation
 async function sendSMS(toNumber: string, message: string) {
+  // Smart truncation for SMS - be more aggressive
+
+  // message with max 200 characters
+  let smsMessage = truncateForSMS(message).slice(0, 400)
+  
   try {
     const response = await fetch('https://api.telnyx.com/v2/messages', {
       method: 'POST',
@@ -313,12 +360,41 @@ async function sendSMS(toNumber: string, message: string) {
         // messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID || '400197a4-0dc6-4459-bfb4-b757267e689e',
         from: process.env.TELNYX_PHONE_NUMBER,
         to: toNumber,
-        text: message
+        text: smsMessage
       })
     })
     
     if (!response.ok) {
-      const errorText = await response.text()
+      const errorData = await response.json()
+      
+      // Handle the "Message too large" error specifically
+      if (errorData.errors && errorData.errors[0]?.code === '40302') {
+        console.log('Message too large, sending shortened version...')
+        // Send a much shorter message
+        const shortMessage = 'Response too long for SMS. Check the app for full details.'
+        
+        const retryResponse = await fetch('https://api.telnyx.com/v2/messages', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.TELNYX_PHONE_NUMBER,
+            to: toNumber,
+            text: shortMessage
+          })
+        })
+        
+        if (retryResponse.ok) {
+          console.log('Shortened SMS sent successfully to:', toNumber)
+          return true
+        } else {
+          throw new Error(`Even shortened SMS failed: ${retryResponse.statusText}`)
+        }
+      }
+      
+      const errorText = JSON.stringify(errorData)
       throw new Error(`SMS send failed: ${response.statusText} - ${errorText}`)
     }
     
@@ -327,6 +403,35 @@ async function sendSMS(toNumber: string, message: string) {
   } catch (error) {
     console.error('Error sending SMS:', error)
     return false
+  }
+}
+
+// Smart SMS truncation function
+function truncateForSMS(message: string): string {
+  // SMS safe limit - be very conservative
+  const MAX_SMS_CHARS = 800 // Well under 10-part limit
+  
+  if (message.length <= MAX_SMS_CHARS) {
+    return message
+  }
+  
+  // Try to find a good breaking point (sentence, paragraph, etc.)
+  const truncated = message.substring(0, MAX_SMS_CHARS - 20) // Leave room for ellipsis
+  
+  // Find last sentence ending
+  const lastSentence = truncated.lastIndexOf('.')
+  const lastQuestion = truncated.lastIndexOf('?')
+  const lastExclamation = truncated.lastIndexOf('!')
+  const lastNewline = truncated.lastIndexOf('\n')
+  
+  const breakPoint = Math.max(lastSentence, lastQuestion, lastExclamation, lastNewline)
+  
+  if (breakPoint > MAX_SMS_CHARS * 0.5) {
+    // Good break point found
+    return message.substring(0, breakPoint + 1) + '\n\n[Message truncated - check app for full response]'
+  } else {
+    // No good break point, just cut it
+    return truncated + '...\n\n[Message truncated - check app for full response]'
   }
 }
 
@@ -342,11 +447,7 @@ async function processCodingMessage(message: string, user: any) {
       responseText = `Error: ${claudeResponse.error || 'Failed to process request'}`
     }
 
-    // Truncate response if too long for SMS
-    if (responseText.length > 1500) {
-      responseText = responseText.substring(0, 1497) + '...'
-    }
-
+    // Smart truncation is now handled in sendSMS function
     return { response: responseText }
   } catch (error) {
     console.error('Error processing coding message:', error)
@@ -369,11 +470,7 @@ async function processUnifiedMessage(message: string, user: any) {
       responseText = `Error: ${claudeResponse.error || 'Failed to process request'}`
     }
 
-    // Truncate response if too long for SMS
-    if (responseText.length > 1500) {
-      responseText = responseText.substring(0, 1497) + '...'
-    }
-
+    // Smart truncation is now handled in sendSMS function
     return { response: responseText }
   } catch (error) {
     console.error('Error processing unified message:', error)

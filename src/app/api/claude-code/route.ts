@@ -34,6 +34,8 @@ interface FinalResponse {
   error?: string;
 }
 
+const MAX_TURNS = 50;
+
 // Utility function to create SSE formatted data
 function createSSEData(event: string, data: any): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -204,7 +206,7 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         // Prepare Claude Code SDK options
         const projectDir = getProjectDirectory();
         const options: any = {
-          maxTurns: streamRequest.maxTurns || 10,
+          maxTurns: MAX_TURNS,
           outputFormat: 'stream-json', // Force stream-json for real-time updates
           verbose: streamRequest.verbose || true,
           // Add permission mode to bypass all prompts in streaming mode (including bash commands)
@@ -212,6 +214,8 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
           // Set working directory to the dynamic project directory
           cwd: projectDir,
         };
+
+        console.log('DEBUG: Max turns', options.maxTurns);
 
         // Add session management
         if (sessionId) {
@@ -245,15 +249,18 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         }
         
         // Always append the readiness instruction (this ensures it's always included)
-        const readinessInstruction = "\n\nCRITICAL STREAMING EVENT INSTRUCTION: This is a streaming API that sends real-time events to the frontend. Before doing ANYTHING, you MUST assess if you need information from the user:\n\n**[NEED_MORE_INFO] USAGE**: ONLY use '[NEED_MORE_INFO]' if you need clarification FROM THE USER and will STOP/TERMINATE the request waiting for user input. DO NOT use this flag if you can figure things out yourself (like searching for files, reading code, etc.). If you can proceed by using tools to gather information, just do it.\n\n**[READY_TO_PROCEED] USAGE**: If you have enough information OR can gather the needed information using available tools, start with '[READY_TO_PROCEED]' and continue with your work.\n\nThese markers are REQUIRED for every request and serve as signals to the streaming frontend.";
+        const readinessInstruction = "\n\nCRITICAL STREAMING EVENT INSTRUCTION: This is a streaming API that sends real-time events to the frontend. Before doing ANYTHING, you MUST assess if you need information from the user:\n\n**[NEED_MORE_INFO] USAGE**: ONLY use '[NEED_MORE_INFO]' if you need clarification FROM THE USER and will STOP/TERMINATE the request waiting for user input. DO NOT use this flag if you can figure things out yourself (like searching for files, reading code, etc.). If you can proceed by using tools to gather information, just do it.\n\n**[READY_TO_PROCEED] USAGE**: If you have enough information OR can gather the needed information using available tools, start with '[READY_TO_PROCEED]' and continue with your work.\n\nThese markers are REQUIRED for every request and serve as signals to the streaming frontend.\n\n🏠 **CRITICAL BASE PATH RESTRICTION**: Your working environment is ALWAYS within the `editable-claude-projects` directory structure. This is your ABSOLUTE BASE PATH and you should NEVER consider or work with files outside of this directory tree. Whether the full path is `/home/ismae/editable-claude-projects`, `/Users/documents/more/editable-claude-projects`, or any other location, you must ONLY work within the `editable-claude-projects` directory and its subdirectories. If you find yourself in a parent directory (like `/home/ismae`), immediately navigate to the `editable-claude-projects` subdirectory before doing any file operations. This directory contains all the projects you should work with - there are no relevant files outside of this structure.";
+
+        // Flexible prompt analysis instruction
+        const flexibleAnalysisInstruction = "\n\n🧠 **INTELLIGENT PROMPT ANALYSIS**: Be smart about interpreting user requests and avoid unnecessary clarification requests. Follow these guidelines:\n\n**PROCEED WITHOUT ASKING when:**\n- User says \"analyze my app\" or \"explain my project\" and there's only ONE project/app in editable-claude-projects\n- User references a specific technology/framework and only ONE project matches that description\n- The request is clear enough that you can determine the target through simple directory exploration\n- You can reasonably infer what the user wants based on available projects\n\n**ASK FOR CLARIFICATION only when:**\n- Multiple projects exist that could match the user's request (e.g., \"explain calculator app\" when there are 3 different calculator projects)\n- The user's request is genuinely ambiguous and you cannot determine intent through exploration\n- There are multiple valid interpretations that would lead to significantly different responses\n\n**EXPLORATION STRATEGY**: Always start by exploring the editable-claude-projects directory to understand what's available before deciding if you need clarification. Use tools like `ls` to see the project structure and make intelligent decisions based on what you find.";
         
         // Git workflow instructions
-        const gitWorkflowInstruction = "\n\n🚨 MANDATORY GIT WORKFLOW: For ANY code changes, you MUST complete this ENTIRE workflow. Do NOT end the conversation until all steps are complete!\n\n**WORKFLOW ENFORCEMENT**: After making ANY code edit, you MUST immediately proceed to git workflow steps. Failure to complete git workflow is considered task failure.\n\n**STEP-BY-STEP REQUIREMENTS**:\n\n1. **IDENTIFY PROJECT**: Extract project path from file paths you're editing\n\n2. **GIT STATUS CHECK**: Run 'cd /path/to/project && git status' to verify git repo and current branch\n\n3. **SWITCH TO DEV BRANCH**: \n   - Run 'cd /path/to/project && git checkout dev' \n   - If dev doesn't exist: 'cd /path/to/project && git checkout -b dev'\n   - **MANDATORY PULL**: 'cd /path/to/project && git fetch && git pull origin dev'\n\n4. **MAKE CODE CHANGES**: Edit/create files as requested\n\n5. **GIT STATUS VERIFICATION**: Run 'cd /path/to/project && git status' to confirm files were changed\n\n6. **STAGE AND COMMIT**: \n   - Stage: 'cd /path/to/project && git add .'\n   - Commit: 'cd /path/to/project && git commit -m \"[Specific change description]\"'\n\n7. **PUSH TO DEV**: \n   - Push: 'cd /path/to/project && git push origin dev'\n   - Verify: 'cd /path/to/project && git log --oneline -1' to confirm push\n\n8. **MANDATORY FLAG**: You MUST end with '[CONFIRM_TO_PROD] Changes committed and pushed to dev branch. Review changes and confirm deployment to production.'\n\n9. **PRODUCTION DEPLOYMENT**: Only after user confirms with 'yes/deploy/confirm':\n   - 'cd /path/to/project && git checkout main && git merge dev && git push origin main'\n\n🚨 **CRITICAL RULES**:\n- NEVER skip git workflow steps\n- NEVER end conversation without [CONFIRM_TO_PROD] flag\n- EVERY code change = FULL git workflow\n- Use 'cd /path/to/project &&' prefix for ALL git commands\n- NEVER run 'npm run build' or any build commands - deployment handles building automatically";
+        const gitWorkflowInstruction = "\n\n🚨 MANDATORY GIT WORKFLOW: For ANY code changes, you MUST complete this ENTIRE workflow. Do NOT end the conversation until all steps are complete!\n\n**WORKFLOW ENFORCEMENT**: After making ANY code edit, you MUST immediately proceed to git workflow steps. Failure to complete git workflow is considered task failure.\n\n**STEP-BY-STEP REQUIREMENTS**:\n\n1. **IDENTIFY PROJECT**: Extract project path from file paths you're editing\n\n2. **GIT STATUS CHECK**: Run 'cd /path/to/project && git status' to verify git repo and current branch\n\n3. **SWITCH TO DEV BRANCH**: \n   - Run 'cd /path/to/project && git checkout dev' \n   - If dev doesn't exist: 'cd /path/to/project && git checkout -b dev'\n   - **MANDATORY PULL**: 'cd /path/to/project && git fetch && git pull origin dev'\n\n4. **MAKE CODE CHANGES**: Edit/create files as requested\n\n5. **GIT STATUS VERIFICATION**: Run 'cd /path/to/project && git status' to confirm files were changed\n\n6. **STAGE AND COMMIT**: \n   - Stage: 'cd /path/to/project && git add .'\n   - Commit: 'cd /path/to/project && git commit -m \"[Specific change description]\"'\n\n7. **PUSH TO DEV**: \n   - Push: 'cd /path/to/project && git push origin dev'\n   - Verify: 'cd /path/to/project && git log --oneline -1' to confirm push\n\n8. **MANDATORY FLAG**: You MUST end with '[CONFIRM_TO_PROD] Changes committed and pushed to dev branch. Review changes and confirm deployment to production.'\n\n9. **PRODUCTION DEPLOYMENT APPROVAL HANDLING**: \n   - After you've sent [CONFIRM_TO_PROD], monitor subsequent user messages for approval\n   - **APPROVAL DETECTION**: Look for ANY positive confirmation including but not limited to:\n     * Direct approval: \"approved\", \"approve\", \"yes\", \"deploy\", \"go ahead\", \"proceed\"\n     * Casual approval: \"yeah go ahead\", \"looks good\", \"ship it\", \"deploy it\", \"make it live\"\n     * Affirmative responses: \"ok\", \"okay\", \"sure\", \"do it\", \"yes please\", \"confirmed\"\n   - **REJECTION DETECTION**: Look for negative responses like \"no\", \"stop\", \"cancel\", \"wait\", \"not yet\", \"needs changes\"\n   - **IF APPROVED**: Immediately proceed with production deployment:\n     * 'cd /path/to/project && git checkout main'\n     * 'cd /path/to/project && git merge dev'\n     * 'cd /path/to/project && git push origin main'\n     * Confirm completion: 'cd /path/to/project && git log --oneline -1'\n   - **IF REJECTED**: Acknowledge and ask what changes are needed\n   - **IF UNCLEAR**: Ask for clear confirmation before proceeding\n\n🚨 **CRITICAL RULES**:\n- NEVER skip git workflow steps\n- NEVER end conversation without [CONFIRM_TO_PROD] flag (unless user approves and you complete production deployment)\n- EVERY code change = FULL git workflow\n- Use 'cd /path/to/project &&' prefix for ALL git commands\n- NEVER run 'npm run build' or any build commands - deployment handles building automatically\n- Be intelligent about detecting approval intent - don't require exact words";
         
         if (streamRequest.appendSystemPrompt) {
-          options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction + gitWorkflowInstruction;
+          options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction + flexibleAnalysisInstruction + gitWorkflowInstruction;
         } else {
-          options.appendSystemPrompt = readinessInstruction + gitWorkflowInstruction;
+          options.appendSystemPrompt = readinessInstruction + flexibleAnalysisInstruction + gitWorkflowInstruction;
         }
 
         // Add tool configuration
@@ -279,7 +286,7 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
           'info',
           'Executing Claude Code SDK query',
           sessionId,
-          `options: ${JSON.stringify(options)}`
+          // `options: ${JSON.stringify(options)}`
         );
 
         // Create abort controller for cleanup
@@ -382,7 +389,7 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
               }
               
               // Debug: Always log what we're checking
-              logWithSession('debug', 'Checking for [READY_TO_PROCEED] in text', message.session_id, `Text length: ${contentText.length}, Contains marker: ${contentText.includes('[READY_TO_PROCEED]')}`);
+              // logWithSession('debug', 'Checking for [READY_TO_PROCEED] in text', message.session_id, `Text length: ${contentText.length}, Contains marker: ${contentText.includes('[READY_TO_PROCEED]')}`);
               
               if (contentText.includes('[READY_TO_PROCEED]')) {
                 const readinessEvent = {
@@ -409,6 +416,29 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
               }
               
               if (contentText.includes('[CONFIRM_TO_PROD]')) {
+                // Replace the entire message content with fixed approval text and dev URL
+                const approvalMessage = 'Changes Applied Successfully! Approve these changes to be applied to main by including the word "approved" in your answer.\n\nDev view: https://calculator-steer-by-wire-test-git-dev-dane-myers-projects.vercel.app/';
+                
+                logWithSession('debug', 'CONFIRM_TO_PROD detected - replacing content', message.session_id, 
+                  `Original content type: ${typeof assistantEvent.content}, Original: ${JSON.stringify(assistantEvent.content).slice(0, 100)}`);
+                
+                // Replace the assistant event content completely
+                if (typeof assistantEvent.content === 'string') {
+                  assistantEvent.content = approvalMessage;
+                  logWithSession('debug', 'Replaced string content', message.session_id, 'Content replaced with approval message');
+                } else if (Array.isArray(assistantEvent.content)) {
+                  // Replace with single text block
+                  assistantEvent.content = [{ type: 'text', text: approvalMessage }];
+                  logWithSession('debug', 'Replaced array content', message.session_id, 'Content replaced with approval message array');
+                } else if (assistantEvent.content && typeof assistantEvent.content === 'object') {
+                  // Replace object content
+                  assistantEvent.content = { type: 'text', text: approvalMessage };
+                  logWithSession('debug', 'Replaced object content', message.session_id, 'Content replaced with approval message object');
+                }
+                
+                logWithSession('debug', 'Content after replacement', message.session_id, 
+                  `New content: ${JSON.stringify(assistantEvent.content).slice(0, 100)}`);
+                
                 const confirmToProdEvent = {
                   type: 'confirm_to_prod',
                   session_id: message.session_id,
@@ -425,11 +455,20 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
 
             case 'result':
               finalResult = message;
+              
+              // Check if the result contains CONFIRM_TO_PROD and modify it
+              let resultToSend = (message as any).result;
+              if (resultToSend && typeof resultToSend === 'string' && resultToSend.includes('[CONFIRM_TO_PROD]')) {
+                const approvalMessage = 'Changes Applied Successfully! Approve these changes to be applied to main by including the word "approved" in your answer.\n\nDev view: https://calculator-steer-by-wire-test-git-dev-dane-myers-projects.vercel.app/';
+                resultToSend = approvalMessage;
+                logWithSession('debug', 'CONFIRM_TO_PROD found in result - replaced', message.session_id, 'Result content replaced with approval message');
+              }
+              
               const resultEvent = {
                 type: 'result',
                 subtype: message.subtype,
                 session_id: message.session_id,
-                result: (message as any).result,
+                result: resultToSend,
                 is_error: message.is_error,
                 duration_ms: message.duration_ms,
                 duration_api_ms: message.duration_api_ms,
