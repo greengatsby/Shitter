@@ -58,7 +58,7 @@ function getProjectDirectory(): string {
 
     if(!STEER_PROJECTS_DIR_BASE) {
       console.log(`[DEBUG] STEER_PROJECTS_DIR_BASE is not set`);
-      return '/home/ismae/editable-claude-projects';
+      return '/root/apps/editable-claude-projects';
     }
 
     // Try multiple approaches to get the correct directory
@@ -69,7 +69,7 @@ function getProjectDirectory(): string {
       : path.join(homeDir, STEER_PROJECTS_DIR_BASE);
     
     // Hardcoded fallback for your specific setup
-    const hardcodedDir = '/home/ismae/editable-claude-projects';
+    const hardcodedDir = '/root/apps/editable-claude-projects';
     
     // console.log(`[DEBUG] Home directory: ${homeDir}`);
     console.log(`[DEBUG] Computed project directory: ${projectDir}`);
@@ -109,11 +109,11 @@ function getProjectDirectory(): string {
 
     const desktopUsername = process.env.DESKTOP_USERNAME;
     // Last resort - use the hardcoded path
-    let fallback = `/home/${desktopUsername}/editable-claude-projects`;
+    let fallback = `/root/apps/editable-claude-projects`;
 
     if(!desktopUsername) {
       console.error('[DEBUG] DESKTOP_USERNAME environment variable is not set');
-      return '/home/ismae/editable-claude-projects';
+      return '/root/apps/editable-claude-projects';
     }
 
     console.log(`[DEBUG] Using hardcoded fallback: ${fallback}`);
