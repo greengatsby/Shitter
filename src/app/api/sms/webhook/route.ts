@@ -13,53 +13,6 @@ const supabaseAdmin = createClient(
   }
 )
 
-// Unified agent configuration that handles both scheduling and food logging
-const UNIFIED_AGENT_CONFIG = {
-  name: "Personal Training Assistant",
-  prompt: `You are a personal trainer and nutrition coach. Someone is texting you and you need to help them with both scheduling and food/nutrition tracking.
-
-CAPABILITIES:
-1. SCHEDULING: Help with training appointments (book, reschedule, cancel, view)
-2. FOOD LOGGING: Log and analyze food intake from descriptions, images, or voice messages
-3. CODING ASSISTANCE: Help with programming tasks using Claude Code SDK
-
-SMART APPOINTMENT HANDLING:
-- When someone wants to reschedule/cancel and mentions a specific time+new time (like "reschedule tomorrow to 4pm"), try rescheduleTraining directly using the time reference as training_identifier
-- If rescheduleTraining fails because it can't find the appointment or finds multiple, THEN use getAppointments to show them options
-- Only use getAppointments when the request is ambiguous or when direct reschedule/cancel fails
-
-FOOD LOGGING GUIDELINES:
-- When users send food-related content (descriptions, images, voice messages about food), use the logFood tool
-- Provide encouraging and supportive nutritional feedback
-- Include estimated calories prominently in your responses
-- For images or voice messages, I'll provide you with the analysis results as context
-
-CODING ASSISTANCE:
-- For programming questions, code reviews, or development tasks, process them through Claude Code SDK
-- Be concise but helpful with technical explanations
-
-AVAILABLE TOOLS:
-- createNewTraining: For booking new sessions
-- rescheduleTraining: For moving existing sessions to new times
-- cancelTraining: For canceling existing sessions
-- getAppointments: For viewing appointments by date range
-- logFood: For logging food intake with nutritional analysis
-
-WORKFLOW:
-1. For clear reschedule requests with both old and new times: Try rescheduleTraining directly first
-2. For clear cancel requests with specific times: Try cancelTraining directly first  
-3. For new booking requests: Use createNewTraining immediately
-4. For food-related content: Use logFood tool
-5. For coding questions: Process through Claude Code SDK
-6. If direct tool call fails due to ambiguity, then use getAppointments to clarify
-7. For vague requests ("show me my schedule"), use getAppointments first
-
-Be incredibly concise, warm, and conversational. Keep messages brief since this is SMS.
-
-Important: Always assume Pacific Time (America/Los_Angeles) when users mention times without specifying timezone.`,
-  tools: ["createNewTraining", "rescheduleTraining", "cancelTraining", "getAppointments", "logFood"]
-}
-
 interface ClaudeResponse {
   content?: string;
   success: boolean;
@@ -113,13 +66,13 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
               const data = JSON.parse(line.slice(6));
               
               // Debug: Log all events
-              console.log('SMS DEBUG: SSE Event', {
-                type: data.type,
-                hasContent: !!data.content,
-                contentPreview: data.content ? JSON.stringify(data.content).slice(0, 100) : 'none',
-                hasResult: !!data.result,
-                resultPreview: data.result ? JSON.stringify(data.result).slice(0, 100) : 'none'
-              });
+              // console.log('SMS DEBUG: SSE Event', {
+              //   type: data.type,
+              //   hasContent: !!data.content,
+              //   contentPreview: data.content ? JSON.stringify(data.content).slice(0, 100) : 'none',
+              //   hasResult: !!data.result,
+              //   resultPreview: data.result ? JSON.stringify(data.result).slice(0, 100) : 'none'
+              // });
               
               // Collect assistant messages
               if (data.type === 'assistant' && data.content) {
@@ -257,9 +210,18 @@ export async function POST(request: NextRequest) {
         .eq('phone_number', fromNumber)
         .single()
       
+        console.log('typeof process.env.TELNYX_PHONE_NUMBER:', typeof process.env.TELNYX_PHONE_NUMBER)
+        console.log('typeof fromNumber:', typeof fromNumber)
       if (!user) {
-        // console.log('Message from unknown user:', fromNumber)
-        await sendSMS(fromNumber, "Hi! I don't have you in my system yet. Please contact support to get set up.")
+
+        if(fromNumber.trim() != process.env.TELNYX_PHONE_NUMBER?.trim()) {
+          console.log('trying send message error:', fromNumber)
+          // MAIN PROBLEM CREATING A ENDLESS LOOP. be careful with this.
+          await sendSMS(fromNumber, "Hi! I don't have you in my system yet. Please contact support to get set up.")
+        }
+
+        console.log('just return')
+        
         return NextResponse.json({ success: true })
       }
       

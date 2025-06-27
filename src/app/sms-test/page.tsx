@@ -404,28 +404,28 @@ export default function SMSTestPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground space-y-2">
-                  <p>
+                  <div>
                     <strong>1.</strong> Enter a test message above and click "Send Test Message"
-                  </p>
-                  <p>
+                  </div>
+                  <div>
                     <strong>2.</strong> The message will be sent from your test number
                     <Badge variant="outline" className="mx-1 font-mono text-xs">
                       +16288959010
                     </Badge>
                     to your main webhook number
-                  </p>
-                  <p>
+                  </div>
+                  <div>
                     <strong>3.</strong> This will trigger your SMS webhook as if a real user sent the message
-                  </p>
-                  <p>
+                  </div>
+                  <div>
                     <strong>4.</strong> Check your webhook logs to see how your system processes the message
-                  </p>
+                  </div>
                 </div>
 
                 <Separator />
 
                 <div className="text-sm">
-                  <p className="font-medium mb-2">Test different scenarios:</p>
+                  <div className="font-medium mb-2">Test different scenarios:</div>
                   <ul className="text-muted-foreground space-y-1 text-xs">
                     <li>• Scheduling messages</li>
                     <li>• Food logging messages</li>
@@ -554,7 +554,7 @@ export default function SMSTestPage() {
                 <Separator />
 
                 <div className="text-sm">
-                  <p className="font-medium mb-2">To test webhook:</p>
+                  <div className="font-medium mb-2">To test webhook:</div>
                   <ol className="text-muted-foreground space-y-1 text-xs">
                     <li>1. Send SMS to +16288959010</li>
                     <li>2. Watch for messages to appear above</li>
