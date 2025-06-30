@@ -210,7 +210,7 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
           outputFormat: 'stream-json', // Force stream-json for real-time updates
           verbose: streamRequest.verbose || true,
           // Add permission mode to bypass all prompts in streaming mode (including bash commands)
-          permissionMode: 'plan',
+          permissionMode: 'bypassPermissions',
           // Set working directory to the dynamic project directory
           cwd: projectDir,
         };
