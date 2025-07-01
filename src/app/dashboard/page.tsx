@@ -31,8 +31,12 @@ import {
   CheckCircle2,
   Loader2,
   User,
-  Trash2
+  Trash2,
+  LogOut,
+  MessageSquare
 } from "lucide-react"
+import { supabase } from '@/utils/supabase'
+import { useAuth } from '@/hooks/useAuth'
 
 interface Organization {
   id: string
@@ -109,6 +113,9 @@ export default function DashboardPage() {
   const [syncingRepositories, setSyncingRepositories] = useState(false)
   const [repositoryFilter, setRepositoryFilter] = useState<string>('all')
 
+  // hooks
+  // const { user, session } = useAuth()
+
   // 🛡️ DUPLICATE PREVENTION: Use refs to track what's already been loaded
   const organizationsLoaded = useRef(false)
   const orgDataLoaded = useRef<string | null>(null) // Track which org data was loaded
@@ -131,6 +138,20 @@ export default function DashboardPage() {
         return 'An error occurred during installation. Please try again.'
     }
   }
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.log('❌ Error checking auth:', error)
+        // window.location.href = '/auth/signin'
+      }
+      if(data) {
+        console.log('✅ Auth data:', data)
+      }
+    }
+    checkAuth()
+  }, [])
 
   // 🚀 OPTIMIZED: Single effect for initial load with duplicate prevention
   useEffect(() => {
@@ -576,9 +597,18 @@ export default function DashboardPage() {
                 {getRoleIcon(currentOrg.role)}
                 {currentOrg.role}
               </Badge>
-              <Button variant="outline" size="sm">
-                <Settings className="h-4 w-4 mr-2" />
-                Settings
+              {(currentOrg.role === 'admin' || currentOrg.role === 'owner') && (
+                <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Web Chat
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={async () => {
+                await supabase.auth.signOut()
+                window.location.href = '/auth/signin'
+              }}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
               </Button>
             </div>
           </div>
@@ -601,6 +631,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{members.length}</div>
+              {dataLoading && <Loader2 className="h-4 w-4 animate-spin" />}
               <p className="text-xs text-muted-foreground">
                 Active members in organization
               </p>
@@ -614,6 +645,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{repositories.length}</div>
+              {dataLoading && <Loader2 className="h-4 w-4 animate-spin" />}
               <p className="text-xs text-muted-foreground">
                 Connected repositories
               </p>
@@ -629,7 +661,8 @@ export default function DashboardPage() {
               <div className="text-2xl font-bold">
                 {hasGitHubConnection ? 'Connected' : 'Not Connected'}
               </div>
-                              <p className="text-xs text-muted-foreground">
+              {dataLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              <p className="text-xs text-muted-foreground">
                 {githubInstallations.length > 0 ? 'GitHub App' : 'Integration status'}
               </p>
             </CardContent>

@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from 'crypto';
-import jwt from 'jsonwebtoken';
 import { createAppAuth } from '@octokit/auth-app';
 import { Octokit } from '@octokit/rest';
 
@@ -442,6 +441,32 @@ class GitHubAppService {
   // ===========================================
   // UTILITY FUNCTIONS
   // ===========================================
+
+  /**
+   * Get installation access token for file system operations
+   */
+  async getInstallationAccessToken(installationId: number): Promise<string> {
+    try {
+      if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY) {
+        throw new Error('GitHub App ID and Private Key must be configured');
+      }
+
+      const auth = createAppAuth({
+        appId: parseInt(GITHUB_APP_ID),
+        privateKey: GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      });
+
+      const installationAuth = await auth({
+        type: 'installation',
+        installationId: installationId,
+      });
+
+      return installationAuth.token;
+    } catch (error) {
+      console.error(`❌ Error getting installation access token for ${installationId}:`, error);
+      throw new Error(`Failed to get installation access token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 
   /**
    * Verify webhook signature

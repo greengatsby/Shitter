@@ -25,12 +25,17 @@ export async function GET(
         role,
         joined_at,
         invited_at,
-        user:users(
+        user:users!user_id(
           id,
           email,
           full_name,
           phone_number,
           avatar_url
+        ),
+        invited_by_user:users!invited_by(
+          id,
+          email,
+          full_name
         )
       `)
       .eq('organization_id', organizationId)

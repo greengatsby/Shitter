@@ -58,7 +58,7 @@ function getProjectDirectory(): string {
 
     if(!STEER_PROJECTS_DIR_BASE) {
       console.log(`[DEBUG] STEER_PROJECTS_DIR_BASE is not set`);
-      return '/root/apps/editable-claude-projects';
+      return '/home/not-root-ismael/apps/editable-claude-projects';
     }
 
     // Try multiple approaches to get the correct directory

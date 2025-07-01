@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { supabase } from '@/utils/supabase'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,26 +12,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create the response with proper cookie handling
-    const response = new NextResponse()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return request.cookies.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            response.cookies.set({ name, value, ...options })
-          },
-          remove(name: string, options: any) {
-            response.cookies.set({ name, value: '', ...options })
-          },
-        },
-      }
-    )
-
+    // Use the client-side supabase instance for auth
     const { data, error } = await supabase.auth.signInWithPassword({ 
       email, 
       password 
@@ -44,29 +25,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Return the response with cookies automatically set by Supabase
-    response.headers.set('Content-Type', 'application/json')
-    response.headers.set('Content-Length', JSON.stringify({
+    return NextResponse.json({
       message: 'Signed in successfully',
-      user: data.user
-    }).length.toString())
-
-    const body = JSON.stringify({
-      message: 'Signed in successfully',
-      user: data.user
-    })
-
-    const finalResponse = new NextResponse(body, {
-      status: 200,
-      headers: response.headers
+      user: data.user,
+      session: data.session
     })
     
-    // Copy cookies from the intermediate response
-    response.cookies.getAll().forEach(cookie => {
-      finalResponse.cookies.set(cookie.name, cookie.value, cookie)
-    })
-    
-    return finalResponse
   } catch (error) {
     console.error('Signin error:', error)
     return NextResponse.json(
