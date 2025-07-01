@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "ngrok": "ngrok http http://localhost:3000 --domain=roley.ngrok.app"
+    "ngrok": "ngrok http --authtoken=2zHYXqmZin8nYVAAkqgMmcHcLAT_JwMGKTdZnj5agNrC44eV http://localhost:3000 --domain=custom.orgflow.ngrok.app"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.31",
     "@hookform/resolvers": "^4.1.3",
     "@modelcontextprotocol/server-github": "^2025.4.8",
+    "@octokit/auth-app": "^8.0.1",
+    "@octokit/rest": "^22.0.0",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-aspect-ratio": "^1.1.2",
@@ -49,6 +51,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.5.2",
     "input-otp": "^1.4.2",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.483.0",
     "next": "^14.1.0",
     "next-themes": "^0.4.6",
@@ -69,6 +72,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
