@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { organizationHelpers, createServerSupabaseClient } from '@/utils/supabase'
+import { organizationHelpers } from '@/utils/supabase'
+import { createServerSupabaseClient } from '@/utils/supabase-server'
 
 // GET /api/organizations/[id]/members - Get organization members
 export async function GET(
@@ -8,7 +9,7 @@ export async function GET(
 ) {
   try {
     const organizationId = params.id;
-    const supabase = createServerSupabaseClient(request)
+    const supabase = createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
@@ -94,7 +95,7 @@ export async function POST(
       )
     }
 
-    const supabase = createServerSupabaseClient(request)
+    const supabase = createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {

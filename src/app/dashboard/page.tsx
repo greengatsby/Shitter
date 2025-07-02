@@ -682,7 +682,7 @@ export default function DashboardPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Team Members</CardTitle>
+                    <CardTitle>Clients</CardTitle>
                     <CardDescription>
                       Manage your organization's team members and their roles
                     </CardDescription>

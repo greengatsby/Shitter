@@ -6,15 +6,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
-
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      )
-    }
-
     // Track cookies that need to be set in response
     const cookiesToSet: Array<{ name: string; value: string; options: any }> = []
 
@@ -35,27 +26,22 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Sign in with server-side client
-    const { data, error } = await supabase.auth.signInWithPassword({ 
-      email, 
-      password 
-    })
+    // Sign out with server-side client
+    const { error } = await supabase.auth.signOut()
 
     if (error) {
       return NextResponse.json(
         { error: error.message },
-        { status: 401 }
+        { status: 500 }
       )
     }
 
     // Create response
     const response = NextResponse.json({
-      message: 'Signed in successfully',
-      user: data.user,
-      session: data.session
+      message: 'Signed out successfully'
     })
 
-    // Set all cookies that Supabase wants to set
+    // Set all cookies that Supabase wants to set (clearing them)
     cookiesToSet.forEach(({ name, value, options }) => {
       response.cookies.set(name, value, {
         ...options,
@@ -68,7 +54,7 @@ export async function POST(request: NextRequest) {
     return response
     
   } catch (error) {
-    console.error('Signin error:', error)
+    console.error('Signout error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

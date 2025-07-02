@@ -16,10 +16,14 @@ import {
   Loader2,
   ArrowLeft,
   Phone,
-  Mail
+  Mail,
+  GitBranch,
+  Github
 } from "lucide-react"
-import { supabase } from '@/utils/supabase'
+import { supabase, githubHelpers } from '@/utils/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import WebChat from '@/app/dashboard/_components/WebChat'
 
 interface Organization {
   id: string
@@ -53,26 +57,48 @@ interface Member {
   }
 }
 
+interface Repository {
+  id: string
+  name: string
+  full_name: string
+  description: string | null
+  private: boolean
+  html_url: string
+  language: string | null
+  default_branch: string
+  installation: {
+    account_login: string
+    account_type: string
+    account_avatar_url: string | null
+    installation_id: number
+    organization_id: string
+    is_active: boolean
+  }
+}
+
 export default function WebChatPage() {
   const router = useRouter()
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<Member[]>([])
+  const [repositories, setRepositories] = useState<Repository[]>([])
   const [selectedMember, setSelectedMember] = useState<string>('')
+  const [selectedRepository, setSelectedRepository] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [showWebChat, setShowWebChat] = useState(false)
+  const {isOrgOwner, isOrgMember, isLoading} = useAuth()
 
   useEffect(() => {
     const initializePage = async () => {
       try {
         setLoading(true)
-        
-        // Check authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError || !user) {
-          router.push('/auth/signin')
-          return
-        }
+
+        // console.log('user', user, 'session', session)
+        // if ( !isLoading && (!user || !session) ) {
+        //   router.push('/auth/signin')
+        //   return
+        // }
 
         // Load organizations to get current org and user role
         await loadOrganizations()
@@ -91,6 +117,7 @@ export default function WebChatPage() {
   useEffect(() => {
     if (currentOrg && isAdmin) {
       loadMembers()
+      loadRepositories()
     }
   }, [currentOrg, isAdmin])
 
@@ -125,10 +152,6 @@ export default function WebChatPage() {
         const userIsAdmin = adminRoles.includes(org.role)
         setIsAdmin(userIsAdmin)
         
-        if (!userIsAdmin) {
-          setError('Access denied. This page is only available to organization administrators.')
-        }
-        
         console.log(`🎯 Set current org to: ${org.organization.name}, role: ${org.role}, isAdmin: ${userIsAdmin}`)
       }
     } catch (err) {
@@ -159,6 +182,26 @@ export default function WebChatPage() {
     }
   }
 
+  const loadRepositories = async () => {
+    if (!currentOrg) return
+
+    try {
+      console.log(`📦 Loading repositories for organization: ${currentOrg.organization.name}`)
+      const { data: repositories, error } = await githubHelpers.getRepositoriesFromDatabase(currentOrg.organization.id)
+      
+      if (error) {
+        throw new Error(`Failed to load repositories: ${error.message || error}`)
+      }
+
+      setRepositories(repositories || [])
+      console.log(`✅ Loaded ${repositories?.length || 0} repositories`)
+      
+    } catch (err) {
+      console.error('❌ Error loading repositories:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load repositories')
+    }
+  }
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'owner': return <Crown className="h-4 w-4 text-yellow-600" />
@@ -181,12 +224,18 @@ export default function WebChatPage() {
       return
     }
     
+    if (!selectedRepository) {
+      setError('Please select a repository to work with.')
+      return
+    }
+    
     const member = members.find(m => m.id === selectedMember)
-    if (member) {
-      console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email}`)
-      // TODO: Implement chat functionality
+    const repository = repositories.find(r => r.id === selectedRepository)
+    
+    if (member && repository) {
+      console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
       setError('') // Clear any previous errors
-      alert(`Chat functionality coming soon! Selected: ${member.user.full_name || member.user.email}`)
+      setShowWebChat(true)
     }
   }
 
@@ -218,6 +267,27 @@ export default function WebChatPage() {
     )
   }
 
+  if (!isAdmin && isOrgMember) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle>Coming Soon</CardTitle>
+            <CardDescription>
+              Web chat for organization members is coming soon. Stay tuned!
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => router.push('/dashboard')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -235,6 +305,53 @@ export default function WebChatPage() {
             </Button>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  // Show WebChat component when both member and repository are selected
+  if (showWebChat) {
+    const selectedMemberData = members.find(m => m.id === selectedMember)
+    const selectedRepositoryData = repositories.find(r => r.id === selectedRepository)
+    
+    return (
+      <div className="min-h-screen">
+        <div className="border-b bg-white">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setShowWebChat(false)}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Selection
+                </Button>
+                <MessageSquare className="h-8 w-8 text-blue-600" />
+                <div>
+                  <h1 className="text-2xl font-bold">Web Chat</h1>
+                  <p className="text-gray-600">
+                    {selectedMemberData?.user.full_name || selectedMemberData?.user.email} • {selectedRepositoryData?.full_name}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">
+                  <Github className="h-3 w-3 mr-1" />
+                  {selectedRepositoryData?.name}
+                </Badge>
+                <Badge variant={getRoleBadgeVariant(currentOrg.role)} className="flex items-center gap-1">
+                  {getRoleIcon(currentOrg.role)}
+                  {currentOrg.role}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </div>
+        {selectedMemberData && selectedRepositoryData && (
+          <WebChat member={selectedMemberData} repository={selectedRepositoryData} />
+        )}
       </div>
     )
   }
@@ -274,45 +391,40 @@ export default function WebChatPage() {
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Select Team Member
-            </CardTitle>
-            <CardDescription>
-              Choose a team member to start a web chat session with.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {members.length > 0 ? (
-              <div className="space-y-6">
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Team Member Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Select Team Member
+              </CardTitle>
+              <CardDescription>
+                Choose a team member to start a web chat session with.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {members.length > 0 ? (
                 <RadioGroup value={selectedMember} onValueChange={setSelectedMember}>
-                  <div className="space-y-3">
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
                     {members.map((member) => (
                       <div key={member.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                         <RadioGroupItem value={member.id} id={member.id} />
                         <Label htmlFor={member.id} className="flex-1 cursor-pointer">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm">
                                 {member.user.full_name?.charAt(0) || member.user.email.charAt(0)}
                               </div>
                               <div>
-                                <p className="font-medium">{member.user.full_name || 'Unknown'}</p>
-                                <p className="text-sm text-gray-600 flex items-center">
+                                <p className="font-medium text-sm">{member.user.full_name || 'Unknown'}</p>
+                                <p className="text-xs text-gray-600 flex items-center">
                                   <Mail className="h-3 w-3 mr-1" />
                                   {member.user.email}
                                 </p>
-                                {member.user.phone_number && (
-                                  <p className="text-sm text-gray-500 flex items-center">
-                                    <Phone className="h-3 w-3 mr-1" />
-                                    {member.user.phone_number}
-                                  </p>
-                                )}
                               </div>
                             </div>
-                            <Badge variant={getRoleBadgeVariant(member.role)} className="flex items-center gap-1">
+                            <Badge variant={getRoleBadgeVariant(member.role)} className="flex items-center gap-1 text-xs">
                               {getRoleIcon(member.role)}
                               {member.role}
                             </Badge>
@@ -322,31 +434,93 @@ export default function WebChatPage() {
                     ))}
                   </div>
                 </RadioGroup>
-
-                <div className="flex justify-end pt-4">
-                  <Button 
-                    onClick={handleStartChat} 
-                    disabled={!selectedMember}
-                    className="min-w-32"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Start Chat
-                  </Button>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Active Members</h3>
+                  <p>No active team members found in this organization.</p>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Active Members</h3>
-                <p>No active team members found in this organization.</p>
-                <Button 
-                  variant="outline" 
-                  className="mt-4"
-                  onClick={() => router.push('/dashboard')}
-                >
-                  Go to Dashboard
-                </Button>
-              </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Repository Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5" />
+                Select Repository
+              </CardTitle>
+              <CardDescription>
+                Choose a repository to work with during the chat session.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {repositories.length > 0 ? (
+                <RadioGroup value={selectedRepository} onValueChange={setSelectedRepository}>
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {repositories.map((repo) => (
+                      <div key={repo.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+                        <RadioGroupItem value={repo.id} id={`repo-${repo.id}`} />
+                        <Label htmlFor={`repo-${repo.id}`} className="flex-1 cursor-pointer">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                <Github className="h-4 w-4 text-blue-600" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">{repo.name}</p>
+                                <p className="text-xs text-gray-600">{repo.full_name}</p>
+                                {repo.description && (
+                                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">{repo.description}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              {repo.language && (
+                                <Badge variant="outline" className="text-xs">
+                                  {repo.language}
+                                </Badge>
+                              )}
+                              <Badge variant={repo.private ? "destructive" : "secondary"} className="text-xs">
+                                {repo.private ? "Private" : "Public"}
+                              </Badge>
+                            </div>
+                          </div>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </RadioGroup>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <GitBranch className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Repositories</h3>
+                  <p>No repositories found for this organization.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Action Button */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex justify-center">
+              <Button 
+                onClick={handleStartChat} 
+                disabled={!selectedMember || !selectedRepository}
+                className="min-w-48"
+                size="lg"
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Start Web Chat Session
+              </Button>
+            </div>
+            {(!selectedMember || !selectedRepository) && (
+              <p className="text-center text-sm text-gray-500 mt-2">
+                Please select both a team member and repository to continue
+              </p>
             )}
           </CardContent>
         </Card>
@@ -366,6 +540,9 @@ export default function WebChatPage() {
               </div>
               <div>
                 <strong>Active Members:</strong> {members.length}
+              </div>
+              <div>
+                <strong>Repositories:</strong> {repositories.length}
               </div>
               <div>
                 <strong>Status:</strong> <span className="text-green-600">Admin Access Granted</span>

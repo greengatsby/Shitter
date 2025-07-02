@@ -1,35 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import { createServerClient } from '@supabase/ssr';
-import { NextRequest } from 'next/server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 // Client-side Supabase client (can be used in client components)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Server-side Supabase client factory (for use in Server Components and API routes)
-export function createServerSupabaseClient(request?: NextRequest) {
-  if (request) {
-    // For API routes with request object
-    return createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          // We don't set cookies in API routes
-        },
-        remove(name: string, options: any) {
-          // We don't remove cookies in API routes
-        },
-      },
-    });
-  } else {
-    // For server components - this should be imported separately
-    throw new Error('Use createServerSupabaseClientWithCookies for Server Components');
-  }
-}
 
 // Auth helpers (client-side compatible)
 export const authHelpers = {
@@ -62,11 +37,60 @@ export const authHelpers = {
   },
 
   async signIn(email: string, password: string) {
-    return await supabase.auth.signInWithPassword({ email, password });
+    try {
+      // Use server-side API to ensure proper cookie handling
+      const response = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Sign in failed');
+      }
+
+      // Return data in the same format as Supabase client
+      return {
+        data: {
+          user: result.user,
+          session: result.session
+        },
+        error: null
+      };
+    } catch (error) {
+      return {
+        data: { user: null, session: null },
+        error: error instanceof Error ? error : new Error('Sign in failed')
+      };
+    }
   },
 
   async signOut() {
-    return await supabase.auth.signOut();
+    try {
+      // Use server-side API to ensure proper cookie handling
+      const response = await fetch('/api/auth/signout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Sign out failed');
+      }
+
+      return { error: null };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error : new Error('Sign out failed')
+      };
+    }
   },
 
   async getCurrentUser() {

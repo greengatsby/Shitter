@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Eye, EyeOff } from "lucide-react"
+import { useAuth } from '@/hooks/useAuth'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -16,9 +17,9 @@ function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { signIn, loading } = useAuth()
 
   useEffect(() => {
     const errorParam = searchParams.get('error')
@@ -35,29 +36,14 @@ function SignInForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
 
-    try {
-      const response = await fetch('/api/auth/signin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      })
+    const result = await signIn(email, password)
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Sign in failed')
-      }
-
+    if (result.success) {
       // Redirect to dashboard
       router.push('/dashboard')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'An unexpected error occurred')
-    } finally {
-      setLoading(false)
+    } else {
+      setError(result.error || 'Sign in failed')
     }
   }
 
