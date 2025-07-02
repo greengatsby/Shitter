@@ -15,7 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { AlertCircle, Send, Copy, Trash2, Settings, MessageSquare, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Member, Repository } from '../web-chat/_types';
+import { OrgClient, Repository } from '../web-chat/_types';
 
 // Claude Code API response interface
 interface ClaudeResponse {
@@ -53,13 +53,13 @@ interface RequestSettings {
 }
 
 interface ComponentProps {
-    member: Member
+    orgClient: OrgClient
     repository?: Repository,
     projectPath?: string,
     omitDevToMainPushFlow?: boolean,
 }
 
-export default function ClaudeTestPage({ member, repository, projectPath, omitDevToMainPushFlow }: ComponentProps) {
+export default function ClaudeTestPage({ orgClient, repository, projectPath, omitDevToMainPushFlow }: ComponentProps) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<ClaudeResponse | null>(null);
@@ -787,7 +787,7 @@ export default function ClaudeTestPage({ member, repository, projectPath, omitDe
 
         <div className="flex items-center gap-4">
             {/* Member Info */}
-            <p className="text-sm text-muted-foreground">Member: {member.user.full_name || member.user.email}</p>
+            <p className="text-sm text-muted-foreground">Member: {orgClient.client_profile?.full_name || orgClient.client_profile?.email || 'Unknown'}</p>
             {/* Repository Info */}
             <p className="text-sm text-muted-foreground">Repository: {repository?.name || 'Multiple repositories'}</p>
         </div>

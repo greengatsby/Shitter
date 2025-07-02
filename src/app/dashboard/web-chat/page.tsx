@@ -27,6 +27,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import WebChat from '@/app/dashboard/_components/WebChat'
 import { toast } from 'sonner'
+import { OrgClient, Repository as RepoType } from './_types'
 
 interface Organization {
   id: string
@@ -41,24 +42,7 @@ interface Organization {
   joined_at: string
 }
 
-interface Member {
-  id: string
-  role: string
-  joined_at: string
-  invited_at: string | null
-  user: {
-    id: string
-    email: string
-    full_name: string | null
-    phone_number: string | null
-    avatar_url: string | null
-  }
-  invited_by_user?: {
-    id: string
-    email: string
-    full_name: string | null
-  }
-}
+// Using OrgClient interface from _types.ts
 
 interface Repository {
   id: string
@@ -82,7 +66,7 @@ interface Repository {
 export default function WebChatPage() {
   const router = useRouter()
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
-  const [members, setMembers] = useState<Member[]>([])
+  const [members, setMembers] = useState<OrgClient[]>([])
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [selectedMember, setSelectedMember] = useState<string>('')
   const [selectedRepository, setSelectedRepository] = useState<string>('')
@@ -191,13 +175,13 @@ export default function WebChatPage() {
       }
 
       const data = await response.json()
-      const activeMembers = (data.members || []).filter((member: Member) => member.joined_at) // Only show active members
+      const activeMembers = (data.clients || []).filter((member: OrgClient) => member.joined_at) // Only show active members
       setMembers(activeMembers)
-      console.log(`✅ Loaded ${activeMembers.length} active members`)
+      console.log(`✅ Loaded ${activeMembers.length} active clients`)
       
     } catch (err) {
       console.error('❌ Error loading members:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load team members')
+      setError(err instanceof Error ? err.message : 'Failed to load clients')
     } finally {
       setMembersLoading(false)
     }
@@ -216,12 +200,14 @@ export default function WebChatPage() {
         throw new Error('Member not found')
       }
       
-      if (!member.user.phone_number) {
+      // Get phone from direct phone field or client_profile phone_number
+      const memberPhone = member.phone || member.client_profile?.phone_number
+      if (!memberPhone) {
         throw new Error('Member does not have a phone number')
       }
       
-      const phoneNumber = encodeURIComponent(member.user.phone_number)
-      console.log(`📦 Loading repositories for member: ${member.user.full_name || member.user.email} (phone: ${member.user.phone_number})`)
+      const phoneNumber = encodeURIComponent(memberPhone)
+      console.log(`📦 Loading repositories for member: ${member.client_profile?.full_name || member.client_profile?.email || 'Unknown'} (phone: ${memberPhone})`)
       
       const response = await fetch(`/api/github/repositories/assignments/phone/${phoneNumber}`)
       
@@ -282,7 +268,8 @@ export default function WebChatPage() {
     }
 
     // Check if member has a phone number
-    if (!member.user.phone_number) {
+    const memberPhone = member.phone || member.client_profile?.phone_number
+    if (!memberPhone) {
       setError('Selected member does not have a phone number. Phone number is required for web chat.')
       return
     }
@@ -299,7 +286,7 @@ export default function WebChatPage() {
           return
         }
 
-        console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
+        console.log(`🚀 Starting chat with: ${member.client_profile?.full_name || member.client_profile?.email || 'Unknown'} for repository: ${repository.full_name}`)
         
         // Clone single repository
         const cloneResponse = await fetch('/api/clone-repository', {
@@ -310,7 +297,7 @@ export default function WebChatPage() {
           body: JSON.stringify({
             repositoryId: repository.id,
             orgId: currentOrg.organization.id,
-            memberPhoneNumber: member.user.phone_number,
+            memberPhoneNumber: memberPhone,
             branch: undefined // Use default branch
           }),
         });
@@ -325,7 +312,7 @@ export default function WebChatPage() {
         setProjectPath(cloneResult.relativeProjectPath)
       } else {
         // No repository selected - clone all repositories
-        console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for all repositories (${repositories.length} repos)`)
+        console.log(`🚀 Starting chat with: ${member.client_profile?.full_name || member.client_profile?.email || 'Unknown'} for all repositories (${repositories.length} repos)`)
         
         // Clone all repositories individually
         let baseProjectPath = '';
@@ -344,7 +331,7 @@ export default function WebChatPage() {
               body: JSON.stringify({
                 repositoryId: repository.id,
                 orgId: currentOrg.organization.id,
-                memberPhoneNumber: member.user.phone_number,
+                memberPhoneNumber: memberPhone,
                 branch: undefined // Use default branch
               }),
             });
@@ -366,34 +353,33 @@ export default function WebChatPage() {
             
             console.log(`✅ Repository ${repository.name} cloned successfully`)
             
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : `Failed to clone ${repository.name}`;
-            console.error(`❌ Error cloning ${repository.name}:`, err);
-            errors.push(errorMsg);
+          } catch (repositoryError) {
+            const errorMsg = repositoryError instanceof Error ? repositoryError.message : `Failed to clone ${repository.name}`
+            errors.push(errorMsg)
+            console.error(`❌ Error cloning ${repository.name}:`, repositoryError)
           }
         }
 
-        // Check if we had any successes
         if (successCount === 0) {
-          throw new Error(`Failed to clone any repositories: ${errors.join(', ')}`);
+          throw new Error(`Failed to clone any repositories:\n${errors.join('\n')}`)
         }
 
-        console.log(`✅ Successfully cloned ${successCount}/${repositories.length} repositories`)
-        
         if (errors.length > 0) {
-          console.warn(`⚠️ Some repositories failed to clone: ${errors.join(', ')}`);
-          // Still proceed if at least some repositories were cloned successfully
+          console.warn(`⚠️ Some repositories failed to clone: ${errors.length}/${repositories.length}`)
         }
-        
-        // Use the base path for multiple repositories
-        setProjectPath(baseProjectPath || `${currentOrg.organization.id}/${member.user.phone_number}`);
-      }
-      
-      setShowWebChat(true)
 
+        // Set the base project path for the workspace
+        setProjectPath(baseProjectPath || `${currentOrg.organization.id}/${memberPhone}`)
+        
+        console.log(`✅ Cloned ${successCount}/${repositories.length} repositories successfully`)
+      }
+
+      // Show the chat interface once cloning is complete
+      setShowWebChat(true)
+      
     } catch (err) {
       console.error('❌ Error starting chat:', err)
-      setError(err instanceof Error ? err.message : 'Failed to start chat session')
+      setError(err instanceof Error ? err.message : 'Failed to start chat')
     } finally {
       setCloningInProgress(false)
     }
@@ -492,7 +478,7 @@ export default function WebChatPage() {
                 <div>
                   <h1 className="text-2xl font-bold">Web Chat</h1>
                   <p className="text-gray-600">
-                    {selectedMemberData?.user.full_name || selectedMemberData?.user.email} • {selectedRepositoryData?.full_name || `All repositories (${repositories.length})`}
+                    {selectedMemberData?.client_profile?.full_name || selectedMemberData?.client_profile?.email} • {selectedRepositoryData?.full_name || `All repositories (${repositories.length})`}
                   </p>
                 </div>
               </div>
@@ -511,7 +497,7 @@ export default function WebChatPage() {
         </div>
         {selectedMemberData && (
           <WebChat 
-            member={selectedMemberData} 
+            orgClient={selectedMemberData} 
             repository={selectedRepositoryData} // Now optional - undefined when multiple repos
             projectPath={projectPath}
             omitDevToMainPushFlow={omitGitWorkflow}
@@ -572,7 +558,7 @@ export default function WebChatPage() {
               {membersLoading ? (
                 <div className="text-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-                  <p className="text-gray-600">Loading team members...</p>
+                  <p className="text-gray-600">Loading clients...</p>
                 </div>
               ) : members.length > 0 ? (
                 <RadioGroup value={selectedMember} onValueChange={setSelectedMember}>
@@ -584,13 +570,14 @@ export default function WebChatPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-sm">
-                                {member.user.full_name?.charAt(0) || member.user.email.charAt(0)}
+                                {member.client_profile?.full_name?.charAt(0) || member.client_profile?.email?.charAt(0)}
                               </div>
                               <div>
-                                <p className="font-medium text-sm">{member.user.full_name || 'Unknown'}</p>
-                                <p className="text-xs text-gray-600 flex items-center">
-                                  <Mail className="h-3 w-3 mr-1" />
-                                  {member.user.email}
+                                <p className="font-medium text-sm">{member.client_profile?.full_name || 'Unknown'}</p>
+                                <p className="text-sm text-gray-600">{member.client_profile?.email || 'No email'}</p>
+                                <p className="text-sm text-gray-500 flex items-center">
+                                  <Phone className="h-3 w-3 mr-1" />
+                                  {member.phone || member.client_profile?.phone_number || 'No phone'}
                                 </p>
                               </div>
                             </div>
@@ -607,8 +594,8 @@ export default function WebChatPage() {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No Active Members</h3>
-                  <p>No active team members found in this organization.</p>
+                  <h3 className="text-lg font-medium mb-2">No Active Clients</h3>
+                  <p>No active clients found in this organization.</p>
                 </div>
               )}
             </CardContent>
@@ -652,7 +639,7 @@ export default function WebChatPage() {
                     <div className="flex items-center gap-2 text-sm text-blue-800">
                       <User className="h-4 w-4" />
                       <span className="font-medium">
-                        Showing repositories for: {members.find(m => m.id === selectedMember)?.user.full_name || members.find(m => m.id === selectedMember)?.user.email}
+                        Showing repositories for: {members.find(m => m.id === selectedMember)?.client_profile?.full_name || members.find(m => m.id === selectedMember)?.client_profile?.email}
                       </span>
                     </div>
                   </div>
@@ -781,7 +768,10 @@ export default function WebChatPage() {
               
               {cloningInProgress && (
                 <p className="text-center text-sm text-blue-600">
-                  Setting up workspace with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.phone_number}{selectedRepository ? `/${repositories.find(r => r.id === selectedRepository)?.name}` : ` (${repositories.length} repositories)`}
+                  Setting up workspace with structure: {currentOrg?.organization.id}/{(() => {
+                    const selectedMemberData = members.find(m => m.id === selectedMember)
+                    return selectedMemberData?.phone || selectedMemberData?.client_profile?.phone_number || 'unknown'
+                  })()}{selectedRepository ? `/${repositories.find(r => r.id === selectedRepository)?.name}` : ` (${repositories.length} repositories)`}
                 </p>
               )}
             </div>
@@ -802,7 +792,7 @@ export default function WebChatPage() {
                 <strong>Your Role:</strong> {currentOrg.role}
               </div>
               <div>
-                <strong>Active Members:</strong> {members.length}
+                <strong>Active Clients:</strong> {members.length}
               </div>
               <div>
                 <strong>Repositories:</strong> {repositories.length}

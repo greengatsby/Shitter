@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       const { data: orgData, error: orgError } = await supabaseAdmin.rpc('create_organization_with_owner', {
         org_name: organization_name,
         org_slug: organization_slug,
-        owner_user_id: authData.user.id
+        owner_auth_user_id: authData.user.id
       })
 
       if (orgError) {

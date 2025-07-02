@@ -48,8 +48,8 @@ export async function GET(request: NextRequest) {
 
     console.log('User profile found:', profile)
 
-    // Get user's organizations using the server-side client
-    const { data: organizations, error: orgsError } = await organizationHelpers.getUserOrganizations(supabase)
+    // Get user's organizations using the server-side client (combined approach)
+    const { data: organizations, error: orgsError } = await organizationHelpers.getUserOrganizationsCombined(supabase)
 
     if (orgsError) {
       console.error('Error fetching organizations:', orgsError)

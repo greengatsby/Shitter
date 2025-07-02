@@ -19,28 +19,10 @@ export async function GET(
       )
     }
 
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select(`
-        id,
-        role,
-        joined_at,
-        invited_at,
-        user:users!user_id(
-          id,
-          email,
-          full_name,
-          phone_number,
-          avatar_url
-        ),
-        invited_by_user:users!invited_by(
-          id,
-          email,
-          full_name
-        )
-      `)
-      .eq('organization_id', organizationId)
-      .order('joined_at', { ascending: false });
+    const { data, error } = await organizationHelpers.getOrganizationClients(
+      organizationId,
+      supabase
+    );
 
     if (error) {
       return NextResponse.json(
@@ -50,7 +32,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      members: data || []
+      clients: data || []
     });
 
   } catch (error) {
@@ -105,12 +87,12 @@ export async function POST(
       )
     }
 
-    const { data, error } = await supabase.rpc('invite_user_to_organization', {
-      org_id: organizationId,
-      phone: phone_number,
-      inviter_user_id: user.id,
-      member_role: role
-    });
+    const { data, error } = await organizationHelpers.handleAddClientToOrg(
+      organizationId,
+      phone_number,
+      role,
+      supabase
+    );
 
     if (error) {
       if (error.message.includes('not found')) {
@@ -119,15 +101,15 @@ export async function POST(
           { status: 404 }
         )
       }
-      if (error.message.includes('already a member')) {
+      if (error.message.includes('already in this organization') || error.message.includes('already a member')) {
         return NextResponse.json(
-          { error: 'User is already a member of this organization' },
+          { error: 'A client with this phone number is already in this organization' },
           { status: 409 }
         )
       }
       if (error.message.includes('Insufficient permissions')) {
         return NextResponse.json(
-          { error: 'You do not have permission to invite users to this organization' },
+          { error: 'You do not have permission to invite clients to this organization' },
           { status: 403 }
         )
       }
@@ -138,8 +120,8 @@ export async function POST(
     }
 
     return NextResponse.json({
-      invitation: data,
-      message: 'User invited successfully'
+      client: data,
+      message: 'Client added successfully'
     });
   } catch (error) {
     console.error('Invite user error:', error);

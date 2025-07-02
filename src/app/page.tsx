@@ -32,7 +32,7 @@ export default function LandingPage() {
             <span className="text-blue-600"> GitHub Projects</span>
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Create client accounts, manage team members via phone invites, connect GitHub repositories,
+            Create client accounts, manage clients via phone invites, connect GitHub repositories,
             and organize your development workflow—all in one powerful platform.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -81,7 +81,7 @@ export default function LandingPage() {
               </div>
               <CardTitle>Phone-Based Invites</CardTitle>
               <CardDescription>
-                Invite team members to your organization using their phone numbers for quick and easy onboarding.
+                Invite clients to your organization using their phone numbers for quick and easy onboarding.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -93,7 +93,7 @@ export default function LandingPage() {
               </div>
               <CardTitle>GitHub Integration</CardTitle>
               <CardDescription>
-                Connect your GitHub account, sync repositories, and assign team members to specific projects.
+                Connect your GitHub account, sync repositories, and assign clients to specific projects.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -105,7 +105,7 @@ export default function LandingPage() {
               </div>
               <CardTitle>Team Collaboration</CardTitle>
               <CardDescription>
-                Manage team members, assign roles, and track project assignments all from one dashboard.
+                Manage clients, assign roles, and track project assignments all from one dashboard.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -165,7 +165,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-semibold mb-4">Invite Your Team</h3>
               <p className="text-gray-600">
-                Add team members using their phone numbers and assign appropriate roles.
+                Add clients using their phone numbers and assign appropriate roles.
               </p>
             </div>
 
@@ -175,7 +175,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-semibold mb-4">Connect GitHub</h3>
               <p className="text-gray-600">
-                Link your GitHub repositories and assign projects to team members.
+                Link your GitHub repositories and assign projects to clients.
               </p>
             </div>
           </div>

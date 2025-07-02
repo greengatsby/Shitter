@@ -238,15 +238,77 @@ export async function POST(request: NextRequest) {
           processed_at: new Date().toISOString()
         })
       
-      // Check if sender is a valid user
-      const { data: user, error: userError } = await supabaseAdmin
-        .from('users')
-        .select('*')
-        .eq('phone_number', fromNumber)
-        .single()
+      // Find user by phone number
+      console.log('🔍 Looking up user by phone number:', fromNumber)
       
-        console.log('typeof process.env.TELNYX_PHONE_NUMBER:', typeof process.env.TELNYX_PHONE_NUMBER)
-        console.log('typeof fromNumber:', typeof fromNumber)
+      // Try to find user by phone in organization_clients first
+      let { data: clientData, error: clientError } = await supabaseAdmin
+        .from('organization_clients')
+        .select(`
+          id,
+          phone,
+          organization_id,
+          role,
+          client_profile:organization_clients_profile(
+            auth_user_id,
+            email,
+            full_name,
+            phone_number
+          )
+        `)
+        .eq('phone', fromNumber)
+        .not('org_client_id', 'is', null)
+        .single()
+
+      let user = null
+      
+      if (clientData?.client_profile) {
+        // Handle both array and single object responses
+        const profile = Array.isArray(clientData.client_profile) 
+          ? clientData.client_profile[0] 
+          : clientData.client_profile as any
+
+        if (profile?.auth_user_id) {
+          // Get full user data
+          const { data: userData, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('id', profile.auth_user_id)
+            .single()
+          
+          if (userData && !userError) {
+            user = userData
+          }
+        }
+      }
+
+      // If not found by organization_clients phone, try by client_profile phone_number
+      if (!user) {
+        const { data: profileData, error: profileError } = await supabaseAdmin
+          .from('organization_clients_profile')
+          .select(`
+            auth_user_id,
+            email,
+            full_name,
+            phone_number
+          `)
+          .eq('phone_number', fromNumber)
+          .single()
+
+        if (profileData?.auth_user_id) {
+          // Get full user data
+          const { data: userData, error: userError } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('id', profileData.auth_user_id)
+            .single()
+          
+          if (userData && !userError) {
+            user = userData
+          }
+        }
+      }
+
       if (!user) {
 
         if(fromNumber.trim() != process.env.TELNYX_PHONE_NUMBER?.trim()) {
@@ -260,16 +322,27 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      // Get user's organization membership
-      const { data: orgMembership, error: orgError } = await supabaseAdmin
-        .from('organization_members')
-        .select('id, organization_id, role')
-        .eq('user_id', user.id)
-        .not('joined_at', 'is', null) // Only get active memberships
-        .single()
+      // Get user's organization membership - we may have already found this in clientData
+      let orgMembership = clientData && clientData.organization_id ? {
+        id: clientData.id,
+        organization_id: clientData.organization_id,
+        role: clientData.role
+      } : null
 
-      if (orgError && orgError.code !== 'PGRST116') { // PGRST116 is "no rows found"
-        console.error('Error fetching organization membership:', orgError)
+      // If we didn't get org info from clientData, try to find it another way
+      if (!orgMembership) {
+        const { data: membershipData, error: orgError } = await supabaseAdmin
+          .from('organization_clients')
+          .select('id, organization_id, role')
+          .eq('phone', fromNumber)
+          .not('joined_at', 'is', null) // Only get active memberships
+          .single()
+
+        if (membershipData && !orgError) {
+          orgMembership = membershipData
+        } else if (orgError && orgError.code !== 'PGRST116') { // PGRST116 is "no rows found"
+          console.error('Error fetching organization membership:', orgError)
+        }
       }
 
       // Get organization details if membership exists

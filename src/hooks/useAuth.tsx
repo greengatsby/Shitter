@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { authHelpers, supabase } from '@/utils/supabase'
 
-interface UserProfile {
+interface OrgAdminsProfileResponse {
   id: string
   created_at: string
   updated_at: string
@@ -14,6 +14,25 @@ interface UserProfile {
   phone_verified: boolean | null
   phone_verification_code: string | null
   phone_verification_expires_at: string | null
+  role: 'org-owner' | 'org-admin'
+  organization_id: string | null
+}
+
+interface OrgAdminsProfileUI {
+  id: string
+  created_at: string
+  updated_at: string
+  email: string
+  full_name: string | null
+  phone_number: string | null
+  avatar_url: string | null
+  status: string | null
+  phone_verified: boolean | null
+  phone_verification_code: string | null
+  phone_verification_expires_at: string | null
+  role: 'org-owner' | 'org-admin'
+  organization_id: string | null
+  isAdmin?: boolean
 }
 
 interface Organization {
@@ -40,7 +59,7 @@ interface OrganizationMember {
 
 interface AuthState {
   user: User | null
-  userProfile: UserProfile | null
+  userProfile: OrgAdminsProfileUI | null
   organizationMemberships: OrganizationMember[] | null
   session: Session | null
   loading: boolean
@@ -58,7 +77,7 @@ export function useAuth() {
   })
 
   // Helper function to fetch user profile
-  const fetchUserProfile = async (userId: string): Promise<UserProfile | null> => {
+  const fetchUserProfile = async (userId: string): Promise<OrgAdminsProfileResponse | null> => {
     try {
       const { data: profile, error } = await supabase
         .from('users')
@@ -82,7 +101,7 @@ export function useAuth() {
   const fetchOrganizationMemberships = async (userId: string): Promise<OrganizationMember[] | null> => {
     try {
       const { data: memberships, error } = await supabase
-        .from('organization_members')
+        .from('organization_clients')
         .select(`
           *,
           organization:organizations(*)
@@ -124,10 +143,13 @@ export function useAuth() {
             fetchOrganizationMemberships(session.user.id)
           ])
           
-          userProfile = profileData
+          userProfile = profileData ? {
+            ...profileData,
+            isAdmin: authHelpers.isOrgAdminOrOwner(profileData?.role || 'org-member')
+          } : null
           organizationMemberships = membershipData
         }
-
+        
         setAuthState({
           user: session?.user ?? null,
           userProfile: userProfile,
@@ -247,7 +269,7 @@ export function useAuth() {
     }
   }
 
-  const updateUserProfile = async (updates: Partial<Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>>) => {
+  const updateUserProfile = async (updates: Partial<Omit<OrgAdminsProfileResponse, 'id' | 'created_at' | 'updated_at'>>) => {
     if (!authState.user) {
       return { success: false, error: 'User not authenticated' }
     }

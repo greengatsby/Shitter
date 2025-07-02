@@ -72,16 +72,48 @@ class GitHubAppService {
    * Create authenticated Octokit instance for app-level operations
    */
   private async createAppOctokit(): Promise<Octokit> {
-    if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY) {
-      throw new Error('GitHub App ID and Private Key must be configured');
+    // More detailed validation and error messages
+    if (!GITHUB_APP_ID) {
+      console.error('❌ GitHub App configuration error - GH_APP_ID not set');
+      debugGitHubAppConfig();
+      throw new Error('GH_APP_ID environment variable is not set or is empty');
+    }
+    
+    if (!GITHUB_APP_PRIVATE_KEY) {
+      console.error('❌ GitHub App configuration error - GH_APP_PK not set');
+      debugGitHubAppConfig();
+      throw new Error('GH_APP_PK environment variable is not set or is empty');
     }
 
-    const auth = createAppAuth({
-      appId: parseInt(GITHUB_APP_ID),
-      privateKey: GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    // Validate that GITHUB_APP_ID is a valid number
+    const appIdNum = parseInt(GITHUB_APP_ID);
+    if (isNaN(appIdNum)) {
+      throw new Error(`GH_APP_ID must be a valid number, got: ${GITHUB_APP_ID}`);
+    }
+
+    // Validate that private key looks correct
+    if (!GITHUB_APP_PRIVATE_KEY.includes('BEGIN') || !GITHUB_APP_PRIVATE_KEY.includes('PRIVATE KEY')) {
+      throw new Error('GH_APP_PK does not appear to be a valid private key format');
+    }
+
+    console.log('🔑 Creating GitHub App auth with:', {
+      appId: appIdNum,
+      privateKeyLength: GITHUB_APP_PRIVATE_KEY.length,
+      privateKeyStart: GITHUB_APP_PRIVATE_KEY.substring(0, 50) + '...'
     });
 
-    return new Octokit({ auth });
+    try {
+      return new Octokit({
+        authStrategy: createAppAuth,
+        auth: {
+          appId: appIdNum,
+          privateKey: GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error creating GitHub App authentication:', error);
+      throw new Error(`Failed to create GitHub App authentication: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
@@ -94,32 +126,51 @@ class GitHubAppService {
       return cached.octokit;
     }
 
-    if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY) {
-      throw new Error('GitHub App ID and Private Key must be configured');
+    // More detailed validation and error messages
+    if (!GITHUB_APP_ID) {
+      console.error('❌ GitHub App configuration error - GH_APP_ID not set');
+      debugGitHubAppConfig();
+      throw new Error('GH_APP_ID environment variable is not set or is empty');
+    }
+    
+    if (!GITHUB_APP_PRIVATE_KEY) {
+      console.error('❌ GitHub App configuration error - GH_APP_PK not set');
+      debugGitHubAppConfig();
+      throw new Error('GH_APP_PK environment variable is not set or is empty');
     }
 
-    const auth = createAppAuth({
-      appId: parseInt(GITHUB_APP_ID),
-      privateKey: GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    });
+    // Validate that GITHUB_APP_ID is a valid number
+    const appIdNum = parseInt(GITHUB_APP_ID);
+    if (isNaN(appIdNum)) {
+      throw new Error(`GH_APP_ID must be a valid number, got: ${GITHUB_APP_ID}`);
+    }
 
-    const installationAuth = await auth({
-      type: 'installation',
-      installationId: installationId,
-    });
+    try {
+      console.log(`🔑 Getting installation token for installation ${installationId}`);
+      
+      const octokit = new Octokit({
+        authStrategy: createAppAuth,
+        auth: {
+          appId: appIdNum,
+          privateKey: GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+          installationId: installationId,
+        }
+      });
 
-    const octokit = new Octokit({ auth: installationAuth.token });
+      // Cache the Octokit instance (expire after 50 minutes for safety - tokens last 1 hour)
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 50);
+      
+      this.octokitCache.set(installationId, {
+        octokit,
+        expires_at: expiresAt,
+      });
 
-    // Cache the Octokit instance (expire after 50 minutes for safety - tokens last 1 hour)
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 50);
-    
-    this.octokitCache.set(installationId, {
-      octokit,
-      expires_at: expiresAt,
-    });
-
-    return octokit;
+      return octokit;
+    } catch (error) {
+      console.error(`❌ Error creating installation authentication for ${installationId}:`, error);
+      throw new Error(`Failed to create installation authentication: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // ===========================================
@@ -569,6 +620,25 @@ export function getGitHubAppConfig() {
     clientId: GITHUB_APP_CLIENT_ID,
     configured: isGitHubAppConfigured(),
   };
+}
+
+export function debugGitHubAppConfig() {
+  console.log('🔍 GitHub App Configuration Debug:');
+  console.log('GH_APP_ID:', GITHUB_APP_ID ? `Set (${GITHUB_APP_ID})` : 'NOT SET');
+  console.log('GH_APP_PK:', GITHUB_APP_PRIVATE_KEY ? `Set (${GITHUB_APP_PRIVATE_KEY.length} chars)` : 'NOT SET');
+  console.log('NEXT_PUBLIC_GITHUB_CLIENT_ID:', GITHUB_APP_CLIENT_ID ? `Set (${GITHUB_APP_CLIENT_ID})` : 'NOT SET');
+  console.log('GH_APP_CLIENT_SECRET:', GITHUB_APP_CLIENT_SECRET ? `Set (${GITHUB_APP_CLIENT_SECRET.length} chars)` : 'NOT SET');
+  console.log('GITHUB_WEBHOOK_SECRET:', GITHUB_WEBHOOK_SECRET ? `Set (${GITHUB_WEBHOOK_SECRET.length} chars)` : 'NOT SET');
+  
+  if (GITHUB_APP_PRIVATE_KEY) {
+    console.log('Private key format check:', {
+      includesBegin: GITHUB_APP_PRIVATE_KEY.includes('BEGIN'),
+      includesPrivateKey: GITHUB_APP_PRIVATE_KEY.includes('PRIVATE KEY'),
+      includesEnd: GITHUB_APP_PRIVATE_KEY.includes('END'),
+      startsCorrectly: GITHUB_APP_PRIVATE_KEY.trim().startsWith('-----BEGIN'),
+      endsCorrectly: GITHUB_APP_PRIVATE_KEY.trim().endsWith('-----')
+    });
+  }
 }
 
 // Export singleton instance

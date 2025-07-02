@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 import { supabase } from '@/utils/supabase'
 import { useAuth } from '@/hooks/useAuth'
+import { ROLES } from '@/utils/constants'
 
 interface Organization {
   id: string
@@ -51,17 +52,27 @@ interface Organization {
   joined_at: string
 }
 
-interface Member {
+interface Client {
   id: string
   role: string
-  joined_at: string
-  user: {
+  phone: string | null
+  joined_at: string | null
+  invited_at: string | null
+  created_at: string
+  org_client_id: string | null
+  client_profile: {
     id: string
-    email: string
+    email: string | null
     full_name: string | null
     phone_number: string | null
     avatar_url: string | null
-  }
+    auth_user_id: string | null
+  } | null
+  invited_by_profile: {
+    id: string
+    email: string | null
+    full_name: string | null
+  } | null
 }
 
 interface GitHubInstallation {
@@ -121,7 +132,7 @@ interface RepositoryAssignment {
 export default function DashboardPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
-  const [members, setMembers] = useState<Member[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [githubInstallations, setGithubInstallations] = useState<GitHubInstallation[]>([])
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [loading, setLoading] = useState(true)
@@ -248,14 +259,14 @@ export default function DashboardPage() {
       
       loadOrganizationData()
       
-      // Check for pending installations after a short delay
-      const timeoutId = setTimeout(() => {
-        linkPendingInstallations()
-      }, 1000)
+      // Check for pending installations after a short delay. DISABLED, left as docs
+      // const timeoutId = setTimeout(() => {
+      //   linkPendingInstallations()
+      // }, 1000)
 
-      return () => {
-        clearTimeout(timeoutId) // Cleanup timeout on unmount/dependency change
-      }
+      // return () => {
+      //   clearTimeout(timeoutId) // Cleanup timeout on unmount/dependency change
+      // }
     }
   }, [currentOrg?.organization.id, loading]) // Add loading to dependencies
 
@@ -317,14 +328,14 @@ export default function DashboardPage() {
         fetch(`/api/organizations/${currentOrg.organization.id}/repositories`)
       ])
 
-      // Handle members
+      // Handle clients
       if (membersResponse.status === 'fulfilled' && membersResponse.value.ok) {
-        const membersData = await membersResponse.value.json()
-        setMembers(membersData.members || [])
-        console.log(`👥 Loaded ${membersData.members?.length || 0} members`)
+        const clientsData = await membersResponse.value.json()
+        setClients(clientsData.clients || [])
+        console.log(`👥 Loaded ${clientsData.clients?.length || 0} clients`)
       } else {
-        console.error('❌ Failed to load members')
-        setMembers([])
+        console.error('❌ Failed to load clients')
+        setClients([])
       }
 
       // Handle GitHub installations
@@ -638,14 +649,19 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Failed to assign user')
       }
 
+      if(!currentOrg) {
+        console.error('❌ No organization found')
+        throw new Error('No organization found')
+      }
+
       console.log('✅ Assignment successful, starting repository clone...')
 
       // Find the assigned user's phone number for cloning
-      const assignedUser = members.find(member => member.user.id === assignData.user_id)
+      const assignedUser = clients.find(client => client.client_profile?.auth_user_id === assignData.user_id)
       
-      if (assignedUser && assignedUser.user.phone_number) {
+      if (assignedUser && (assignedUser.phone || assignedUser.client_profile?.phone_number)) {
         try {
-          console.log(`🚀 Cloning repository ${selectedRepository.name} for user: ${assignedUser.user.full_name || assignedUser.user.email}`)
+          console.log(`🚀 Cloning repository ${selectedRepository.name} for user: ${assignedUser.client_profile?.full_name || assignedUser.client_profile?.email}`)
           
           const cloneResponse = await fetch('/api/clone-repository', {
             method: 'POST',
@@ -654,8 +670,8 @@ export default function DashboardPage() {
             },
             body: JSON.stringify({
               repositoryId: selectedRepository.id,
-              orgId: currentOrg?.organization.id,
-              memberPhoneNumber: assignedUser.user.phone_number,
+              orgId: currentOrg.organization.id,
+              memberPhoneNumber: assignedUser.phone || assignedUser.client_profile?.phone_number,
               branch: undefined // Use default branch
             }),
           })
@@ -728,16 +744,16 @@ export default function DashboardPage() {
 
   const getRoleIcon = (role: string) => {
     switch (role) {
-      case 'owner': return <Crown className="h-4 w-4 text-yellow-600" />
-      case 'admin': return <Shield className="h-4 w-4 text-blue-600" />
+      case 'org-owner': return <Crown className="h-4 w-4 text-yellow-600" />
+      case 'org-admin': return <Shield className="h-4 w-4 text-blue-600" />
       default: return <User className="h-4 w-4 text-gray-600" />
     }
   }
 
   const getRoleBadgeVariant = (role: string) => {
     switch (role) {
-      case 'owner': return 'default'
-      case 'admin': return 'secondary'
+      case 'org-owner': return 'default'
+      case 'org-admin': return 'secondary'
       default: return 'outline'
     }
   }
@@ -805,7 +821,7 @@ export default function DashboardPage() {
                 {getRoleIcon(currentOrg.role)}
                 {currentOrg.role}
               </Badge>
-              {(currentOrg.role === 'admin' || currentOrg.role === 'owner') && (
+              {(currentOrg.role === ROLES.ORG_ADMIN || currentOrg.role === ROLES.ORG_OWNER) && (
                 <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Web Chat
@@ -834,14 +850,14 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Team Members</CardTitle>
+              <CardTitle className="text-sm font-medium">Clients</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{members.length}</div>
+              <div className="text-2xl font-bold">{clients.length}</div>
               {dataLoading && <Loader2 className="h-4 w-4 animate-spin" />}
               <p className="text-xs text-muted-foreground">
-                Active members in organization
+                Active clients in organization
               </p>
             </CardContent>
           </Card>
@@ -880,7 +896,7 @@ export default function DashboardPage() {
         {/* Main Content Tabs */}
         <Tabs defaultValue="team" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="team">Team Members</TabsTrigger>
+            <TabsTrigger value="team">Clients</TabsTrigger>
             <TabsTrigger value="github">GitHub Integration</TabsTrigger>
             <TabsTrigger value="repositories">Repositories</TabsTrigger>
           </TabsList>
@@ -892,21 +908,21 @@ export default function DashboardPage() {
                   <div>
                     <CardTitle>Clients</CardTitle>
                     <CardDescription>
-                      Manage your organization's team members and their roles
+                      Manage your organization's clients and their roles
                     </CardDescription>
                   </div>
                   <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                     <DialogTrigger asChild>
                       <Button>
                         <UserPlus className="h-4 w-4 mr-2" />
-                        Invite Member
+                        Invite Clients
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Invite Team Member</DialogTitle>
+                        <DialogTitle>Invite Client</DialogTitle>
                         <DialogDescription>
-                          Add a new member to your organization by phone number
+                          Add a new client to your organization by phone number
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
@@ -956,29 +972,29 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {members.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  {clients.map((client) => (
+                    <div key={client.id} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex items-center space-x-4">
                         <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                          {member.user.full_name?.charAt(0) || member.user.email.charAt(0)}
+                          {client.client_profile?.full_name?.charAt(0) || client.client_profile?.email?.charAt(0) || client.phone?.charAt(0) || '?'}
                         </div>
                         <div>
-                          <p className="font-medium">{member.user.full_name || 'Unknown'}</p>
-                          <p className="text-sm text-gray-600">{member.user.email}</p>
-                          {member.user.phone_number && (
+                          <p className="font-medium">{client.client_profile?.full_name || 'Unknown'}</p>
+                          <p className="text-sm text-gray-600">{client.client_profile?.email || 'No email'}</p>
+                          {(client.phone || client.client_profile?.phone_number) && (
                             <p className="text-sm text-gray-500 flex items-center">
                               <Phone className="h-3 w-3 mr-1" />
-                              {member.user.phone_number}
+                              {client.phone || client.client_profile?.phone_number}
                             </p>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <Badge variant={getRoleBadgeVariant(member.role)} className="flex items-center gap-1">
-                          {getRoleIcon(member.role)}
-                          {member.role}
+                        <Badge variant={getRoleBadgeVariant(client.role)} className="flex items-center gap-1">
+                          {getRoleIcon(client.role)}
+                          {client.role}
                         </Badge>
-                        {member.joined_at ? (
+                        {client.joined_at ? (
                           <span className="text-sm text-green-600">Active</span>
                         ) : (
                           <span className="text-sm text-yellow-600">Pending</span>
@@ -986,9 +1002,9 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                  {members.length === 0 && (
+                  {clients.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
-                      No team members yet. Invite someone to get started!
+                      No clients yet. Invite someone to get started!
                     </div>
                   )}
                 </div>
@@ -1265,7 +1281,7 @@ export default function DashboardPage() {
             <DialogHeader>
               <DialogTitle>Manage Repository Access</DialogTitle>
               <DialogDescription>
-                Assign team members to {selectedRepository?.name} repository
+                Assign clients to {selectedRepository?.name} repository
               </DialogDescription>
             </DialogHeader>
             
@@ -1284,11 +1300,11 @@ export default function DashboardPage() {
                         <SelectValue placeholder="Select member" />
                       </SelectTrigger>
                       <SelectContent>
-                        {members
-                          .filter(member => !repositoryAssignments.some(assignment => assignment.user_id === member.user.id))
-                          .map((member) => (
-                          <SelectItem key={member.user.id} value={member.user.id}>
-                            {member.user.full_name || member.user.email}
+                        {clients
+                          .filter(client => client.client_profile?.auth_user_id && !repositoryAssignments.some(assignment => assignment.user_id === client.client_profile!.auth_user_id))
+                          .map((client) => (
+                          <SelectItem key={client.client_profile!.auth_user_id!} value={client.client_profile!.auth_user_id!}>
+                            {client.client_profile!.full_name || client.client_profile!.email || 'Unknown'}
                           </SelectItem>
                         ))}
                       </SelectContent>

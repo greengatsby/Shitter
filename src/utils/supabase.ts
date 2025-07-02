@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { ROLES } from './constants';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -8,12 +9,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Auth helpers (client-side compatible)
 export const authHelpers = {
-  async signUp(email: string, password: string, metadata: { full_name?: string; phone_number?: string } = {}) {
+  isOrgAdminOrOwner(role: string) {
+    return role === ROLES.ORG_OWNER || role === ROLES.ORG_ADMIN;
+  },
+
+  async signUp(email: string, password: string, metadata: { full_name?: string; phone_number?: string; user_type?: 'org-client' | 'org-admin' } = {}) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: metadata
+        data: {
+          ...metadata,
+          user_type: metadata.user_type || 'org-admin' // Default to org-client if not specified
+        }
       }
     });
     
@@ -115,7 +123,7 @@ export const organizationHelpers = {
     const { data, error } = await client.rpc('create_organization_with_owner', {
       org_name: name,
       org_slug: slug,
-      owner_user_id: actualUserId
+      owner_auth_user_id: actualUserId
     });
 
     return { data, error };
@@ -126,8 +134,9 @@ export const organizationHelpers = {
     const { data: { user } } = await client.auth.getUser();
     if (!user) return { data: null, error: new Error('User not authenticated') };
 
+    // DEPRECATED: Use getUserOrganizationsNew instead
     const { data, error } = await client
-      .from('organization_members')
+      .from('organization_clients')
       .select(`
         id,
         role,
@@ -146,20 +155,25 @@ export const organizationHelpers = {
   },
 
   async getOrganizationMembers(organizationId: string, supabaseClient?: any) {
+    // DEPRECATED: Use getOrganizationClients instead
+    console.warn('getOrganizationMembers is deprecated. Use getOrganizationClients instead.')
     const client = supabaseClient || supabase;
     const { data, error } = await client
-      .from('organization_members')
+      .from('organization_clients')
       .select(`
         id,
         role,
+        phone,
         joined_at,
         invited_at,
-        user:users(
+        org_client_id,
+        client_profile:organization_clients_profile(
           id,
           email,
           full_name,
           phone_number,
-          avatar_url
+          avatar_url,
+          auth_user_id
         )
       `)
       .eq('organization_id', organizationId)
@@ -184,9 +198,10 @@ export const organizationHelpers = {
   },
 
   async updateMemberRole(memberId: string, role: 'member' | 'admin', supabaseClient?: any) {
+    // DEPRECATED: Use updateClientRole instead
     const client = supabaseClient || supabase;
     const { data, error } = await client
-      .from('organization_members')
+      .from('organization_clients')
       .update({ role })
       .eq('id', memberId)
       .select();
@@ -195,13 +210,260 @@ export const organizationHelpers = {
   },
 
   async removeMember(memberId: string, supabaseClient?: any) {
+    // DEPRECATED: Use removeClient instead
     const client = supabaseClient || supabase;
     const { data, error } = await client
-      .from('organization_members')
+      .from('organization_clients')
       .delete()
       .eq('id', memberId);
 
     return { data, error };
+  },
+
+  // NEW CLIENT MANAGEMENT FUNCTIONS
+  
+  /**
+   * Add a client to an organization by phone number
+   * This creates a record in organization_clients with the phone number
+   * The org_client_id will be null until they sign up
+   */
+  async handleAddClientToOrg(organizationId: string, phoneNumber: string, role: 'member' | 'admin' = 'member', supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    try {
+      // Only users from users table can invite clients
+      // Check if inviter is an org admin user (through users table)
+      const { data: orgAdminUser, error: orgAdminError } = await client
+        .from('users')
+        .select('role, organization_id')
+        .eq('id', user.id)
+        .eq('organization_id', organizationId)
+        .single();
+
+      if (orgAdminError || !orgAdminUser) {
+        throw new Error('You are not a member of this organization');
+      }
+
+      // Check if they have permission to invite clients
+      if (!authHelpers.isOrgAdminOrOwner(orgAdminUser.role)) {
+        throw new Error('Insufficient permissions to invite clients');
+      }
+
+      // Check if a client with this phone number already exists in this organization
+      const { data: existingClient, error: existingError } = await client
+        .from('organization_clients')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('phone', phoneNumber)
+        .single();
+
+      if (existingClient) {
+        throw new Error('A client with this phone number is already in this organization');
+      }
+
+      // Create the new organization client record
+      // Note: invited_by will store the user.id (not a client profile id) since only users can invite
+      const { data: newClient, error: clientError } = await client
+        .from('organization_clients')
+        .insert({
+          organization_id: organizationId,
+          phone: phoneNumber,
+          role: role,
+          invited_by: user.id, // Store the inviter's user ID
+          invited_at: new Date().toISOString(),
+          org_client_id: null // Will be set when they sign up
+        })
+        .select(`
+          id,
+          phone,
+          role,
+          invited_at,
+          created_at,
+          organization:organizations(name)
+        `)
+        .single();
+
+      if (clientError) {
+        throw new Error(`Failed to create client: ${clientError.message}`);
+      }
+
+      return { data: newClient, error: null };
+    } catch (err) {
+      console.error('Error adding client to organization:', err);
+      return { data: null, error: err instanceof Error ? err : new Error('Unknown error') };
+    }
+  },
+
+  /**
+   * Get organization clients (updated for new table structure)
+   */
+  async getOrganizationClients(organizationId: string, supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
+      .from('organization_clients')
+      .select(`
+        id,
+        role,
+        phone,
+        joined_at,
+        invited_at,
+        created_at,
+        org_client_id,
+              client_profile:organization_clients_profile(
+        id,
+        email,
+        full_name,
+        phone_number,
+        avatar_url,
+        auth_user_id
+      )
+      `)
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false });
+
+    return { data, error };
+  },
+
+  /**
+   * Update client role
+   */
+  async updateClientRole(clientId: string, role: 'member' | 'admin', supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
+      .from('organization_clients')
+      .update({ role })
+      .eq('id', clientId)
+      .select();
+
+    return { data, error };
+  },
+
+  /**
+   * Remove client from organization
+   */
+  async removeClient(clientId: string, supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data, error } = await client
+      .from('organization_clients')
+      .delete()
+      .eq('id', clientId);
+
+    return { data, error };
+  },
+
+  /**
+   * Get user's organizations for org admin users (direct relationship through users table)
+   */
+  async getOrganizationOrgAdminUser(supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return { data: null, error: new Error('User not authenticated') };
+
+    const { data, error } = await client
+      .from('users')
+      .select(`
+        id,
+        role,
+        created_at,
+        organization:organizations!users_organization_id_fkey(
+          id,
+          name,
+          slug,
+          description,
+          created_at
+        )
+      `)
+      .eq('id', user.id)
+      .not('organization_id', 'is', null);
+
+    if (error) {
+      console.error('Error fetching org admin user organizations:', error);
+      return { data: [], error: error };
+    }
+
+    // Transform the data to match the expected format
+    if (data && data.length > 0) {
+      const transformedData = data.map((item: any) => ({
+        id: item.id,
+        role: item.role, // 'org-owner' or 'org-admin'
+        joined_at: item.created_at,
+        organization: item.organization
+      }));
+      return { data: transformedData, error: null };
+    }
+
+    return { data: [], error: null };
+  },
+
+  /**
+   * Get user's organizations for client users (through organization_clients system)
+   */
+  async getOrganizationClientUser(supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return { data: null, error: new Error('User not authenticated') };
+
+    // First get the user's client profile
+    const { data: clientProfile, error: profileError } = await client
+      .from('organization_clients_profile')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (profileError) {
+      return { data: [], error: null }; // User has no client profile yet
+    }
+
+    const { data, error } = await client
+      .from('organization_clients')
+      .select(`
+        id,
+        role,
+        joined_at,
+        phone,
+        organization:organizations(
+          id,
+          name,
+          slug,
+          description,
+          created_at
+        )
+      `)
+      .eq('org_client_id', clientProfile.id);
+
+    return { data, error };
+  },
+
+  /**
+   * Get user's organizations (combined approach for both org admin and client users)
+   * Prioritizes org admin users since they can perform administrative actions like inviting clients
+   */
+  async getUserOrganizationsCombined(supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    
+    // First try to get organizations as an org admin user (can invite clients)
+    const { data: adminOrgs, error: adminError } = await this.getOrganizationOrgAdminUser(client);
+    
+    if (adminOrgs && adminOrgs.length > 0) {
+      return { data: adminOrgs, error: null };
+    }
+    
+    // If no admin organizations found, try to get as a client user (limited permissions)
+    const { data: clientOrgs, error: clientError } = await this.getOrganizationClientUser(client);
+    
+    if (clientOrgs && clientOrgs.length > 0) {
+      return { data: clientOrgs, error: null };
+    }
+    
+    // Return empty array if no organizations found in either system
+    if (adminError && clientError) {
+      console.error('Both admin and client organization lookups failed:', { adminError, clientError });
+      return { data: [], error: clientError };
+    }
+    
+    return { data: [], error: null };
   }
 };
 
@@ -290,14 +552,77 @@ export const githubHelpers = {
   },
 
   /**
+   * Completely delete GitHub App installation from database
+   * This will CASCADE DELETE all related repositories and assignments
+   */
+  async deleteInstallationFromDatabase(installationId: number) {
+    console.log(`🗑️  Completely deleting installation ${installationId} from database`);
+    
+    try {
+      // First get the installation to log what we're deleting
+      const { data: installation } = await supabase
+        .from('github_app_installations')
+        .select('account_login, repositories_count')
+        .eq('installation_id', installationId)
+        .single();
+
+      if (installation) {
+        console.log(`📋 Deleting installation for ${installation.account_login} with ${installation.repositories_count} repositories`);
+      }
+
+      // Delete the installation - this will CASCADE DELETE all related:
+      // - github_repositories (via FK constraint)
+      // - user_repository_assignments (via FK from repositories)
+      const { data, error } = await supabase
+        .from('github_app_installations')
+        .delete()
+        .eq('installation_id', installationId);
+
+      if (error) {
+        console.error('❌ Error deleting installation:', error);
+        return { data: null, error };
+      }
+
+      console.log(`✅ Successfully deleted installation ${installationId} and all related data`);
+      return { data, error: null };
+    } catch (err) {
+      console.error('💥 Exception during installation deletion:', err);
+      return { data: null, error: err };
+    }
+  },
+
+  /**
    * Link installation to organization in database
    */
   async linkInstallationToOrganizationInDatabase(installationId: number, organizationId: string) {
+    // First, check if the installation exists and get its current organization_id
+    const { data: installation, error: fetchError } = await supabase
+      .from('github_app_installations')
+      .select('organization_id')
+      .eq('installation_id', installationId)
+      .single();
+
+    if (fetchError) {
+      console.error('❌ Error fetching installation:', fetchError);
+      return { data: null, error: fetchError };
+    }
+
+    // Check if already linked to an organization (not null and not the string "null")
+    if (installation?.organization_id && installation.organization_id !== 'null') {
+      return { 
+        data: null, 
+        error: { 
+          message: 'Installation is already linked to an organization',
+          code: 'ALREADY_LINKED' 
+        } 
+      };
+    }
+
+    // Update the installation - this handles both NULL and string "null" cases
     const { data, error } = await supabase
       .from('github_app_installations')
       .update({ organization_id: organizationId })
-      .eq('installation_id', installationId)
-      .eq('organization_id', null); // Only update if not already linked
+      .eq('installation_id', installationId);
 
     return { data, error };
   },
@@ -306,14 +631,23 @@ export const githubHelpers = {
    * Get pending installations from database (not linked to any organization)
    */
   async getPendingInstallationsFromDatabase() {
+    // Query installations that are either NULL or the string "null" for organization_id
     const { data, error } = await supabase
       .from('github_app_installations')
       .select('*')
-      .is('organization_id', null)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
-    return { data, error };
+    if (error) {
+      return { data: null, error };
+    }
+
+    // Filter out installations that have a valid organization_id (not null and not "null")
+    const pendingInstallations = data?.filter(installation => 
+      !installation.organization_id || installation.organization_id === 'null'
+    ) || [];
+
+    return { data: pendingInstallations, error: null };
   },
 
   /**
@@ -415,6 +749,38 @@ export const githubHelpers = {
       return { data, error: null };
     } catch (err) {
       console.error('💥 Exception during repository sync:', err);
+      return { data: null, error: err };
+    }
+  },
+
+  /**
+   * Remove specific repositories from database for an installation
+   */
+  async removeRepositoriesFromDatabase(installationId: number, repositoriesToRemove: Array<{ id: number; name: string; full_name: string }>) {
+    console.log(`🗑️  Removing ${repositoriesToRemove.length} repositories from installation ${installationId}`);
+    
+    try {
+      const githubRepoIds = repositoriesToRemove.map(repo => repo.id);
+      
+      // Delete the repositories from the database
+      const { data, error } = await supabase
+        .from('github_repositories')
+        .delete()
+        .eq('installation_id', installationId)
+        .in('github_repo_id', githubRepoIds)
+        .select('id, full_name');
+
+      if (error) {
+        console.error('❌ Error removing repositories:', error);
+        return { data: null, error };
+      }
+
+      console.log(`✅ Successfully removed ${data?.length || 0} repositories from database:`,
+                  data?.map(r => r.full_name) || []);
+      
+      return { data, error: null };
+    } catch (err) {
+      console.error('💥 Exception during repository removal:', err);
       return { data: null, error: err };
     }
   },
@@ -770,6 +1136,12 @@ export const githubHelpers = {
   async getWebhookDeliveries(installationId?: number, eventType?: string, limit: number = 100) {
     console.warn('⚠️  getWebhookDeliveries is deprecated. Use getWebhookDeliveriesFromDatabase instead.');
     return this.getWebhookDeliveriesFromDatabase(installationId, eventType, limit);
+  },
+
+  /** @deprecated Use removeRepositoriesFromDatabase instead */
+  async removeRepositoriesForInstallation(installationId: number, repositories: any[]) {
+    console.warn('⚠️  removeRepositoriesForInstallation is deprecated. Use removeRepositoriesFromDatabase instead.');
+    return this.removeRepositoriesFromDatabase(installationId, repositories);
   }
 };
 

@@ -12,7 +12,7 @@ The GitHub MCP (Model Context Protocol) server has been added to this project, p
 4. Select appropriate scopes based on your needs:
    - `repo` - Full control of private repositories
    - `public_repo` - Access to public repositories
-   - `read:org` - Read org and team membership
+   - `read:org` - Read org and clientship
    - `read:user` - Read user profile data
    - `user:email` - Access user email addresses
 
@@ -206,7 +206,7 @@ The integration uses the following database tables (already included in your sch
 - **Sync Repositories**: Fetch and update repository list from GitHub
 - **Disconnect Integration**: Deactivate the GitHub integration
 - **Repository Management**: View synced repositories with links to GitHub
-- **Team Access**: Manage which team members have access to which repositories
+- **Team Access**: Manage which clients have access to which repositories
 
 ### 5. API Endpoints
 

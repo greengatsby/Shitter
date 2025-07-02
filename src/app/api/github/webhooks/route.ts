@@ -28,6 +28,18 @@ interface WebhookEvent {
     full_name: string
     private: boolean
   }>
+  repositories_added?: Array<{
+    id: number
+    name: string
+    full_name: string
+    private: boolean
+  }>
+  repositories_removed?: Array<{
+    id: number
+    name: string
+    full_name: string
+    private: boolean
+  }>
   repository?: {
     id: number
     name: string
@@ -69,7 +81,7 @@ export async function POST(request: NextRequest) {
     const payload: WebhookEvent = JSON.parse(body)
     
     // Log webhook delivery
-    await githubHelpers.logWebhookDelivery({
+    await githubHelpers.logWebhookDeliveryToDatabase({
       delivery_id: deliveryId,
       event_type: eventType,
       action: payload.action,
@@ -102,7 +114,7 @@ export async function POST(request: NextRequest) {
         
       default:
         console.log(`Unhandled webhook event: ${eventType}`)
-        await githubHelpers.markWebhookProcessed(deliveryId, `Unhandled event type: ${eventType}`)
+        await githubHelpers.markWebhookProcessedInDatabase(deliveryId, `Unhandled event type: ${eventType}`)
     }
 
     return NextResponse.json({ message: 'Webhook processed successfully' })
@@ -112,7 +124,7 @@ export async function POST(request: NextRequest) {
     // Try to mark as processed with error if we have the delivery ID
     const deliveryId = request.headers.get('x-github-delivery')
     if (deliveryId) {
-      await githubHelpers.markWebhookProcessed(
+      await githubHelpers.markWebhookProcessedInDatabase(
         deliveryId, 
         error instanceof Error ? error.message : 'Unknown error'
       )
@@ -152,7 +164,7 @@ async function handleInstallationEvent(payload: WebhookEvent, deliveryId: string
 
         // Save installation without organization mapping - will be linked in callback
         // Use null instead of empty string for organization_id
-        await githubHelpers.saveGitHubInstallation(null, installationData)
+        await githubHelpers.saveInstallationToDatabase(null, installationData)
         
         // Don't sync repositories here - wait until installation is linked to organization
         // Repositories will be synced in the authorize callback or when explicitly requested
@@ -160,18 +172,18 @@ async function handleInstallationEvent(payload: WebhookEvent, deliveryId: string
         break
 
       case 'deleted':
-        // Installation deleted - suspend in our database
-        await githubHelpers.suspendGitHubInstallation(installation.id, 'github_deletion')
+        // Installation deleted - completely delete from our database
+        await githubHelpers.deleteInstallationFromDatabase(installation.id)
         break
 
       case 'suspend':
         // Installation suspended
-        await githubHelpers.suspendGitHubInstallation(installation.id, 'github_suspension')
+        await githubHelpers.suspendInstallationInDatabase(installation.id, 'github_suspension')
         break
 
       case 'unsuspend':
         // Installation unsuspended - reactivate
-        const { error } = await githubHelpers.saveGitHubInstallation('', {
+        const { error } = await githubHelpers.saveInstallationToDatabase(null, {
           installation_id: installation.id,
           app_id: installation.app_id,
           app_slug: installation.app_slug,
@@ -191,10 +203,10 @@ async function handleInstallationEvent(payload: WebhookEvent, deliveryId: string
         console.log(`Unhandled installation action: ${action}`)
     }
 
-    await githubHelpers.markWebhookProcessed(deliveryId)
+    await githubHelpers.markWebhookProcessedInDatabase(deliveryId)
   } catch (error) {
     console.error('Error handling installation event:', error)
-    await githubHelpers.markWebhookProcessed(
+    await githubHelpers.markWebhookProcessedInDatabase(
       deliveryId, 
       error instanceof Error ? error.message : 'Unknown error'
     )
@@ -203,7 +215,7 @@ async function handleInstallationEvent(payload: WebhookEvent, deliveryId: string
 
 async function handleRepositoriesEvent(payload: WebhookEvent, deliveryId: string) {
   try {
-    const { action, installation, repositories } = payload
+    const { action, installation, repositories, repositories_added, repositories_removed } = payload
 
     if (!installation) {
       throw new Error('Installation data missing from payload')
@@ -212,30 +224,38 @@ async function handleRepositoriesEvent(payload: WebhookEvent, deliveryId: string
     switch (action) {
       case 'added':
         // Repositories added to installation
-        if (repositories && repositories.length > 0) {
-          await githubHelpers.saveRepositoriesToDatabase(installation.id, repositories)
-        }
+        // Webhook payload only contains minimal data, so fetch full data from GitHub API
+        console.log(`📦 Repository addition detected for installation ${installation.id}`)
+        
+        // Fetch all current repositories from GitHub API to get complete data
+        const allRepositories = await githubAppService.fetchRepositoriesFromGitHub(installation.id)
+        console.log(`🔄 Fetched ${allRepositories.length} repositories from GitHub API for installation ${installation.id}`)
+        
+        // Save all repositories (this will add new ones and update existing ones)
+        await githubHelpers.saveRepositoriesToDatabase(installation.id, allRepositories)
         break
 
       case 'removed':
         // Repositories removed from installation
-        if (repositories && repositories.length > 0) {
-          // Mark repositories as inactive
-          for (const repo of repositories) {
-            // Note: We'd need to add a method to deactivate specific repositories
-            console.log(`Repository ${repo.full_name} removed from installation ${installation.id}`)
-          }
-        }
+        // Re-sync with GitHub API to ensure we have the current state
+        console.log(`🗑️  Repository removal detected for installation ${installation.id}`)
+        
+        // Fetch current repositories from GitHub API to get accurate state
+        const currentRepositories = await githubAppService.fetchRepositoriesFromGitHub(installation.id)
+        console.log(`🔄 Fetched ${currentRepositories.length} current repositories from GitHub API for installation ${installation.id}`)
+        
+        // Save current repositories (this will remove any that no longer exist)
+        await githubHelpers.saveRepositoriesToDatabase(installation.id, currentRepositories)
         break
 
       default:
         console.log(`Unhandled repositories action: ${action}`)
     }
 
-    await githubHelpers.markWebhookProcessed(deliveryId)
+    await githubHelpers.markWebhookProcessedInDatabase(deliveryId)
   } catch (error) {
     console.error('Error handling repositories event:', error)
-    await githubHelpers.markWebhookProcessed(
+    await githubHelpers.markWebhookProcessedInDatabase(
       deliveryId,
       error instanceof Error ? error.message : 'Unknown error'
     )
@@ -269,10 +289,10 @@ async function handleRepositoryEvent(payload: WebhookEvent, deliveryId: string) 
         console.log(`Unhandled repository action: ${action}`)
     }
 
-    await githubHelpers.markWebhookProcessed(deliveryId)
+    await githubHelpers.markWebhookProcessedInDatabase(deliveryId)
   } catch (error) {
     console.error('Error handling repository event:', error)
-    await githubHelpers.markWebhookProcessed(
+    await githubHelpers.markWebhookProcessedInDatabase(
       deliveryId,
       error instanceof Error ? error.message : 'Unknown error'
     )
@@ -284,10 +304,10 @@ async function handlePushEvent(payload: WebhookEvent, deliveryId: string) {
     // Handle push events if needed for triggering builds, etc.
     console.log('Push event received:', payload.repository?.full_name)
     
-    await githubHelpers.markWebhookProcessed(deliveryId)
+    await githubHelpers.markWebhookProcessedInDatabase(deliveryId)
   } catch (error) {
     console.error('Error handling push event:', error)
-    await githubHelpers.markWebhookProcessed(
+    await githubHelpers.markWebhookProcessedInDatabase(
       deliveryId,
       error instanceof Error ? error.message : 'Unknown error'
     )

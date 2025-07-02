@@ -232,7 +232,7 @@ await githubAppService.createPullRequest(
 
 ### Repository Assignments
 
-You can assign team members to specific repositories:
+You can assign clients to specific repositories:
 
 ```typescript
 import { githubHelpers } from '@/utils/supabase'
@@ -358,7 +358,7 @@ Example workflow:
 Manage multiple repositories across different organizations:
 - Install on multiple GitHub organizations
 - Sync repositories per installation
-- Assign team members to specific repositories
+- Assign clients to specific repositories
 - Track changes across all repositories
 
 ### Webhook Event Processing

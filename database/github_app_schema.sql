@@ -105,22 +105,24 @@ CREATE TRIGGER update_github_app_installations_updated_at
 -- Add RLS policies for GitHub App installations
 ALTER TABLE github_app_installations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Organization members can view their GitHub installations" ON github_app_installations
+CREATE POLICY "Organization clients can view their GitHub installations" ON github_app_installations
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = github_app_installations.organization_id 
-            AND organization_members.user_id = auth.uid()
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = github_app_installations.organization_id 
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
 CREATE POLICY "Organization admins can manage GitHub installations" ON github_app_installations
     FOR ALL USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = github_app_installations.organization_id 
-            AND organization_members.user_id = auth.uid()
-            AND organization_members.role IN ('owner', 'admin')
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = github_app_installations.organization_id 
+            AND ocp.auth_user_id = auth.uid()
+            AND oc.role IN ('owner', 'admin')
         )
     );
 
@@ -131,10 +133,11 @@ CREATE POLICY "Organization admins can view webhook deliveries" ON github_webhoo
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM github_app_installations gai
-            JOIN organization_members om ON gai.organization_id = om.organization_id
+            JOIN organization_clients oc ON gai.organization_id = oc.organization_id
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
             WHERE gai.installation_id = github_webhook_deliveries.installation_id
-            AND om.user_id = auth.uid()
-            AND om.role IN ('owner', 'admin')
+            AND ocp.auth_user_id = auth.uid()
+            AND oc.role IN ('owner', 'admin')
         )
     );
 

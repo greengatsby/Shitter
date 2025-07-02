@@ -13,12 +13,62 @@ export async function GET(
 
     console.log(`🔍 Fetching repository assignments for phone number: ${phoneNumber}`)
 
-    // First, find the user by phone number
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, email, full_name, phone_number')
-      .eq('phone_number', phoneNumber)
+    // First, find the user by phone number in organization_clients table
+    // Try both direct phone field and client_profile phone_number
+    let userData = null
+    let userError = null
+
+    // First try to find by direct phone in organization_clients
+    const { data: clientData, error: clientError } = await supabase
+      .from('organization_clients')
+      .select(`
+        phone,
+        client_profile:organization_clients_profile(
+          auth_user_id,
+          email,
+          full_name,
+          phone_number
+        )
+      `)
+      .eq('phone', phoneNumber)
+      .not('org_client_id', 'is', null)
       .single()
+
+    if (clientData?.client_profile) {
+      // Handle both array and single object responses
+      const profile = Array.isArray(clientData.client_profile) 
+        ? clientData.client_profile[0] 
+        : clientData.client_profile as any
+
+      if (profile?.auth_user_id) {
+        userData = {
+          id: profile.auth_user_id,
+          email: profile.email,
+          full_name: profile.full_name,
+          phone_number: phoneNumber
+        }
+      }
+    }
+
+    if (!userData) {
+      // If not found by direct phone, try by client_profile phone_number
+      const { data: profileData, error: profileError } = await supabase
+        .from('organization_clients_profile')
+        .select('auth_user_id, email, full_name, phone_number')
+        .eq('phone_number', phoneNumber)
+        .single()
+
+      if (profileData?.auth_user_id) {
+        userData = {
+          id: profileData.auth_user_id,
+          email: profileData.email,
+          full_name: profileData.full_name,
+          phone_number: phoneNumber
+        }
+      } else {
+        userError = profileError || new Error('User not found')
+      }
+    }
 
     if (userError || !userData) {
       console.error('Error finding user by phone number:', userError)
@@ -51,45 +101,35 @@ export async function GET(
         )
       `)
       .eq('user_id', userData.id)
-    
+
     if (error) {
-      console.error('Error fetching user repository assignments:', {
-        error,
-        phoneNumber,
-        userId: userData.id,
-        errorCode: error.code,
-        errorMessage: error.message,
-        errorDetails: error.details
-      })
+      console.error('Error fetching repository assignments:', error)
       return NextResponse.json(
         { 
-          error: 'Failed to fetch user repository assignments',
-          details: error.message,
-          code: error.code
+          error: 'Failed to fetch repository assignments',
+          details: error.message
         },
         { status: 500 }
       )
     }
 
-    console.log(`📋 Raw assignments data:`, assignments)
+    const repositories = assignments?.map(assignment => assignment.repository).filter(Boolean) || []
 
-    // Extract repositories from assignments and filter out any null repositories
-    const repositories = (assignments || [])
-      .map(assignment => assignment.repository)
-      .filter(repo => repo !== null)
-
-    console.log(`✅ Processed ${repositories.length} repositories for user with phone ${phoneNumber}`)
+    console.log(`📦 Found ${repositories.length} repository assignments for user`)
 
     return NextResponse.json({
-      repositories: repositories,
-      assignments: assignments || [],
       user: userData,
-      message: `Found ${repositories.length} repositories assigned to user with phone ${phoneNumber}`
+      repositories,
+      assignments
     })
+
   } catch (error) {
-    console.error('Get user repository assignments by phone error:', error)
+    console.error('Unexpected error in repository assignments API:', error)
     return NextResponse.json(
-      { error: 'An unexpected error occurred' },
+      { 
+        error: 'An unexpected error occurred',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

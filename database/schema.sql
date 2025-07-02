@@ -45,24 +45,54 @@ CREATE TABLE users (
     CONSTRAINT users_updated_at_check CHECK (updated_at >= created_at)
 );
 
--- Create organization members table
-CREATE TABLE organization_members (
+-- Create organization clients table (updated structure)
+CREATE TABLE organization_clients (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    org_client_id UUID REFERENCES organization_clients_profile(id) ON DELETE CASCADE,
     
     role member_role DEFAULT 'member',
+    phone TEXT,
     
     -- Invitation system
-    invited_by UUID REFERENCES users(id),
+    invited_by UUID REFERENCES organization_clients_profile(id),
     invited_at TIMESTAMP WITH TIME ZONE,
     joined_at TIMESTAMP WITH TIME ZONE,
     
-    UNIQUE(organization_id, user_id),
-    CONSTRAINT organization_members_updated_at_check CHECK (updated_at >= created_at)
+    UNIQUE(organization_id, org_client_id),
+    CONSTRAINT organization_clients_updated_at_check CHECK (updated_at >= created_at)
+);
+
+-- Create organization clients profile table
+CREATE TABLE organization_clients_profile (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    
+    -- Foreign key to auth.users
+    auth_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+    
+    -- Profile information
+    email TEXT,
+    full_name TEXT,
+    phone_number TEXT,
+    avatar_url TEXT,
+    
+    -- Additional client-specific fields
+    company_name TEXT,
+    position TEXT,
+    notes TEXT,
+    
+    -- Status
+    status user_status DEFAULT 'active',
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}'::jsonb,
+    
+    CONSTRAINT organization_clients_profile_updated_at_check CHECK (updated_at >= created_at)
 );
 
 -- Create GitHub integrations table
@@ -193,8 +223,14 @@ CREATE TABLE business_ideas (
 CREATE INDEX idx_organizations_slug ON organizations(slug);
 CREATE INDEX idx_users_phone_number ON users(phone_number);
 CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_organization_members_org_id ON organization_members(organization_id);
-CREATE INDEX idx_organization_members_user_id ON organization_members(user_id);
+CREATE INDEX idx_organization_clients_org_id ON organization_clients(organization_id);
+CREATE INDEX idx_organization_clients_org_client_id ON organization_clients(org_client_id);
+CREATE INDEX idx_organization_clients_phone ON organization_clients(phone);
+
+-- Indexes for organization_clients_profile
+CREATE INDEX idx_organization_clients_profile_auth_user_id ON organization_clients_profile(auth_user_id);
+CREATE INDEX idx_organization_clients_profile_email ON organization_clients_profile(email);
+CREATE INDEX idx_organization_clients_profile_phone_number ON organization_clients_profile(phone_number);
 CREATE INDEX idx_github_integrations_org_id ON github_integrations(organization_id);
 CREATE INDEX idx_github_repositories_integration_id ON github_repositories(github_integration_id);
 CREATE INDEX idx_user_repository_assignments_user_id ON user_repository_assignments(user_id);
@@ -228,8 +264,13 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_organization_members_updated_at 
-    BEFORE UPDATE ON organization_members 
+CREATE TRIGGER update_organization_clients_updated_at 
+    BEFORE UPDATE ON organization_clients 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_organization_clients_profile_updated_at 
+    BEFORE UPDATE ON organization_clients_profile 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -306,22 +347,24 @@ FROM business_ideas;
 -- Organizations RLS
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Organization members can view their organizations" ON organizations
+CREATE POLICY "Organization clients can view their organizations" ON organizations
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = organizations.id 
-            AND organization_members.user_id = auth.uid()
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = organizations.id 
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
 CREATE POLICY "Organization owners can update their organizations" ON organizations
     FOR UPDATE USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = organizations.id 
-            AND organization_members.user_id = auth.uid()
-            AND organization_members.role IN ('owner', 'admin')
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = organizations.id 
+            AND ocp.auth_user_id = auth.uid()
+            AND oc.role IN ('owner', 'admin')
         )
     );
 
@@ -340,67 +383,104 @@ CREATE POLICY "Users can update their own profile" ON users
 CREATE POLICY "Allow user profile creation" ON users
     FOR INSERT WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Organization members can view other members" ON users
+CREATE POLICY "Organization clients can view other users" ON users
     FOR SELECT USING (
         auth.uid() = id OR
-        id IN (
-            SELECT DISTINCT om2.user_id
-            FROM organization_members om1
-            JOIN organization_members om2 ON om1.organization_id = om2.organization_id
-            WHERE om1.user_id = auth.uid()
+        EXISTS (
+            SELECT 1 FROM organization_clients_profile ocp1
+            JOIN organization_clients oc1 ON ocp1.id = oc1.org_client_id
+            JOIN organization_clients oc2 ON oc1.organization_id = oc2.organization_id
+            JOIN organization_clients_profile ocp2 ON oc2.org_client_id = ocp2.id
+            WHERE ocp1.auth_user_id = auth.uid() AND ocp2.auth_user_id = id
         )
     );
 
--- Organization members RLS
-ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
+-- Organization clients RLS
+ALTER TABLE organization_clients ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Organization members can view their memberships" ON organization_members
-    FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Organization clients can view their memberships" ON organization_clients
+    FOR SELECT USING (
+        org_client_id IN (
+            SELECT id FROM organization_clients_profile WHERE auth_user_id = auth.uid()
+        )
+    );
 
-CREATE POLICY "Organization admins can manage members" ON organization_members
+CREATE POLICY "Organization admins can manage clients" ON organization_clients
     FOR ALL USING (
-        user_id = auth.uid() OR
+        org_client_id IN (
+            SELECT id FROM organization_clients_profile WHERE auth_user_id = auth.uid()
+        ) OR
         organization_id IN (
-            SELECT organization_id FROM organization_members 
-            WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
+            SELECT oc.organization_id 
+            FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE ocp.auth_user_id = auth.uid() 
+            AND oc.role IN ('owner', 'admin')
         )
     );
 
-CREATE POLICY "Allow organization member creation" ON organization_members
+CREATE POLICY "Allow organization client creation" ON organization_clients
     FOR INSERT WITH CHECK (true);
+
+-- Organization clients profile RLS
+ALTER TABLE organization_clients_profile ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own client profile" ON organization_clients_profile
+    FOR SELECT USING (auth_user_id = auth.uid());
+
+CREATE POLICY "Users can update their own client profile" ON organization_clients_profile
+    FOR UPDATE USING (auth_user_id = auth.uid());
+
+CREATE POLICY "Allow client profile creation" ON organization_clients_profile
+    FOR INSERT WITH CHECK (auth_user_id = auth.uid());
+
+CREATE POLICY "Organization admins can view client profiles" ON organization_clients_profile
+    FOR SELECT USING (
+        id IN (
+            SELECT oc.org_client_id
+            FROM organization_clients oc
+            JOIN organization_clients_profile ocp_admin ON oc.org_client_id = ocp_admin.id
+            WHERE ocp_admin.auth_user_id = auth.uid()
+            AND oc.role IN ('owner', 'admin')
+        ) OR
+        auth_user_id = auth.uid()
+    );
 
 -- GitHub integrations RLS
 ALTER TABLE github_integrations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Organization members can view GitHub integrations" ON github_integrations
+CREATE POLICY "Organization clients can view GitHub integrations" ON github_integrations
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = github_integrations.organization_id 
-            AND organization_members.user_id = auth.uid()
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = github_integrations.organization_id 
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
 CREATE POLICY "Organization admins can manage GitHub integrations" ON github_integrations
     FOR ALL USING (
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = github_integrations.organization_id 
-            AND organization_members.user_id = auth.uid()
-            AND organization_members.role IN ('owner', 'admin')
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = github_integrations.organization_id 
+            AND ocp.auth_user_id = auth.uid()
+            AND oc.role IN ('owner', 'admin')
         )
     );
 
 -- GitHub repositories RLS
 ALTER TABLE github_repositories ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Organization members can view GitHub repositories" ON github_repositories
+CREATE POLICY "Organization clients can view GitHub repositories" ON github_repositories
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM github_integrations gi
-            JOIN organization_members om ON gi.organization_id = om.organization_id
+            JOIN organization_clients oc ON gi.organization_id = oc.organization_id
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
             WHERE gi.id = github_repositories.github_integration_id 
-            AND om.user_id = auth.uid()
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
@@ -413,9 +493,10 @@ CREATE POLICY "Users can view their repository assignments" ON user_repository_a
         EXISTS (
             SELECT 1 FROM github_repositories gr
             JOIN github_integrations gi ON gr.github_integration_id = gi.id
-            JOIN organization_members om ON gi.organization_id = om.organization_id
+            JOIN organization_clients oc ON gi.organization_id = oc.organization_id
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
             WHERE gr.id = user_repository_assignments.repository_id 
-            AND om.user_id = auth.uid()
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
@@ -434,13 +515,14 @@ DROP POLICY IF EXISTS "Allow anonymous update" ON business_ideas;
 CREATE POLICY "Users can view their own ideas" ON business_ideas
     FOR SELECT USING (user_id = auth.uid());
 
-CREATE POLICY "Organization members can view organization ideas" ON business_ideas
+CREATE POLICY "Organization clients can view organization ideas" ON business_ideas
     FOR SELECT USING (
         organization_id IS NOT NULL AND
         EXISTS (
-            SELECT 1 FROM organization_members 
-            WHERE organization_members.organization_id = business_ideas.organization_id 
-            AND organization_members.user_id = auth.uid()
+            SELECT 1 FROM organization_clients oc
+            JOIN organization_clients_profile ocp ON oc.org_client_id = ocp.id
+            WHERE oc.organization_id = business_ideas.organization_id 
+            AND ocp.auth_user_id = auth.uid()
         )
     );
 
@@ -456,19 +538,33 @@ CREATE POLICY "Users can update their own ideas" ON business_ideas
 CREATE OR REPLACE FUNCTION create_organization_with_owner(
     org_name TEXT,
     org_slug TEXT,
-    owner_user_id UUID
+    owner_auth_user_id UUID
 ) RETURNS UUID AS $$
 DECLARE
     new_org_id UUID;
+    client_profile_id UUID;
 BEGIN
     -- Insert organization
     INSERT INTO organizations (name, slug)
     VALUES (org_name, org_slug)
     RETURNING id INTO new_org_id;
     
-    -- Add owner as organization member
-    INSERT INTO organization_members (organization_id, user_id, role, joined_at)
-    VALUES (new_org_id, owner_user_id, 'owner', NOW());
+    -- Create client profile if it doesn't exist
+    INSERT INTO organization_clients_profile (auth_user_id)
+    VALUES (owner_auth_user_id)
+    ON CONFLICT (auth_user_id) DO NOTHING
+    RETURNING id INTO client_profile_id;
+    
+    -- Get client profile id if it already existed
+    IF client_profile_id IS NULL THEN
+        SELECT id INTO client_profile_id 
+        FROM organization_clients_profile 
+        WHERE auth_user_id = owner_auth_user_id;
+    END IF;
+    
+    -- Add owner as organization client
+    INSERT INTO organization_clients (organization_id, org_client_id, role, joined_at)
+    VALUES (new_org_id, client_profile_id, 'owner', NOW());
     
     RETURN new_org_id;
 END;

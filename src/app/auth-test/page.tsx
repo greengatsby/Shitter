@@ -122,7 +122,7 @@ export default function AuthTestPage() {
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-semibold">Organization Memberships</h3>
                 <div className="flex gap-1">
-                  <Badge variant="outline" className="text-xs">public.organization_members</Badge>
+                  <Badge variant="outline" className="text-xs">public.organization_clients</Badge>
                   <Button 
                     size="sm" 
                     variant="ghost" 

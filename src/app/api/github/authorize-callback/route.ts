@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { githubHelpers } from '@/utils/supabase'
-import { githubAppService } from '@/lib/github-app'
+import { githubAppService, debugGitHubAppConfig } from '@/lib/github-app'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -51,6 +51,9 @@ export async function GET(request: NextRequest) {
       
       // Store the installation without organization mapping for now
       try {
+        console.log('🔍 Debug: About to fetch installation from GitHub - checking config...');
+        debugGitHubAppConfig();
+        
         const installation = await githubAppService.fetchInstallationFromGitHub(parseInt(installationId))
         
         const installationData = {
@@ -104,6 +107,9 @@ export async function GET(request: NextRequest) {
         }
       } else {
         // Installation doesn't exist, create it
+        console.log('🔍 Debug: Creating new installation - checking config...');
+        debugGitHubAppConfig();
+        
         const installation = await githubAppService.fetchInstallationFromGitHub(parseInt(installationId))
         
         const installationData = {
