@@ -638,6 +638,44 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Failed to assign user')
       }
 
+      console.log('✅ Assignment successful, starting repository clone...')
+
+      // Find the assigned user's phone number for cloning
+      const assignedUser = members.find(member => member.user.id === assignData.user_id)
+      
+      if (assignedUser && assignedUser.user.phone_number) {
+        try {
+          console.log(`🚀 Cloning repository ${selectedRepository.name} for user: ${assignedUser.user.full_name || assignedUser.user.email}`)
+          
+          const cloneResponse = await fetch('/api/clone-repository', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              repositoryId: selectedRepository.id,
+              orgId: currentOrg?.organization.id,
+              memberPhoneNumber: assignedUser.user.phone_number,
+              branch: undefined // Use default branch
+            }),
+          })
+
+          const cloneResult = await cloneResponse.json()
+
+          if (!cloneResponse.ok || !cloneResult.success) {
+            console.warn('⚠️ Repository assignment succeeded but cloning failed:', cloneResult.error)
+            // Don't throw error here - assignment was successful, cloning is secondary
+          } else {
+            console.log(`✅ Repository cloned successfully to: ${cloneResult.repositoryPath}`)
+          }
+        } catch (cloneErr) {
+          console.warn('⚠️ Repository assignment succeeded but cloning failed:', cloneErr)
+          // Don't throw error here - assignment was successful, cloning is secondary
+        }
+      } else {
+        console.warn('⚠️ Cannot clone repository: user has no phone number')
+      }
+
       // Reset form and reload assignments
       setAssignData({ user_id: '', role: 'developer' })
       await loadRepositoryAssignments(selectedRepository.id)
