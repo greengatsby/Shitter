@@ -16,6 +16,8 @@ interface StreamRequest {
   maxTurns?: number;
   outputFormat?: 'json' | 'text' | 'stream-json';
   verbose?: boolean;
+  projectPath?: string;
+  omitDevToMainPushFlow?: boolean;
 }
 
 interface StreamResponse {
@@ -57,8 +59,13 @@ function getProjectDirectory(): string {
     const STEER_PROJECTS_DIR_BASE = process.env.STEER_PROJECTS_DIR_BASE;
 
     if(!STEER_PROJECTS_DIR_BASE) {
+      const desktopUsername = process.env.DESKTOP_USERNAME;
+      if(!desktopUsername) {
+        console.error('[DEBUG] DESKTOP_USERNAME environment variable is not set');
+        return '/root/apps/editable-claude-projects';
+      }
       console.log(`[DEBUG] STEER_PROJECTS_DIR_BASE is not set`);
-      return '/home/not-root-ismael/apps/editable-claude-projects';
+      return `/home/${desktopUsername}/apps/editable-claude-projects`;
     }
 
     // Try multiple approaches to get the correct directory
@@ -204,14 +211,16 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
 
       try {
         // Prepare Claude Code SDK options
-        const projectDir = getProjectDirectory();
+        const projectDir = streamRequest.projectPath 
+          ? path.join(getProjectDirectory(), streamRequest.projectPath)
+          : getProjectDirectory();
         const options: any = {
           maxTurns: MAX_TURNS,
           outputFormat: 'stream-json', // Force stream-json for real-time updates
           verbose: streamRequest.verbose || true,
           // Add permission mode to bypass all prompts in streaming mode (including bash commands)
           permissionMode: 'bypassPermissions',
-          // Set working directory to the dynamic project directory
+          // Set working directory to the custom or default project directory
           cwd: projectDir,
         };
 
@@ -254,8 +263,14 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         // Flexible prompt analysis instruction
         const flexibleAnalysisInstruction = "\n\n🧠 **INTELLIGENT PROMPT ANALYSIS**: Be smart about interpreting user requests and avoid unnecessary clarification requests. Follow these guidelines:\n\n**PROCEED WITHOUT ASKING when:**\n- User says \"analyze my app\" or \"explain my project\" and there's only ONE project/app in editable-claude-projects\n- User references a specific technology/framework and only ONE project matches that description\n- The request is clear enough that you can determine the target through simple directory exploration\n- You can reasonably infer what the user wants based on available projects\n\n**ASK FOR CLARIFICATION only when:**\n- Multiple projects exist that could match the user's request (e.g., \"explain calculator app\" when there are 3 different calculator projects)\n- The user's request is genuinely ambiguous and you cannot determine intent through exploration\n- There are multiple valid interpretations that would lead to significantly different responses\n\n**EXPLORATION STRATEGY**: Always start by exploring the editable-claude-projects directory to understand what's available before deciding if you need clarification. Use tools like `ls` to see the project structure and make intelligent decisions based on what you find.";
         
-        // Git workflow instructions
-        const gitWorkflowInstruction = "\n\n🚨 MANDATORY GIT WORKFLOW: For ANY code changes, you MUST complete this ENTIRE workflow. Do NOT end the conversation until all steps are complete!\n\n**WORKFLOW ENFORCEMENT**: After making ANY code edit, you MUST immediately proceed to git workflow steps. Failure to complete git workflow is considered task failure.\n\n**STEP-BY-STEP REQUIREMENTS**:\n\n1. **IDENTIFY PROJECT**: Extract project path from file paths you're editing\n\n2. **GIT STATUS CHECK**: Run 'cd /path/to/project && git status' to verify git repo and current branch\n\n3. **SWITCH TO DEV BRANCH**: \n   - Run 'cd /path/to/project && git checkout dev' \n   - If dev doesn't exist: 'cd /path/to/project && git checkout -b dev'\n   - **MANDATORY PULL**: 'cd /path/to/project && git fetch && git pull origin dev'\n\n4. **MAKE CODE CHANGES**: Edit/create files as requested\n\n5. **GIT STATUS VERIFICATION**: Run 'cd /path/to/project && git status' to confirm files were changed\n\n6. **STAGE AND COMMIT**: \n   - Stage: 'cd /path/to/project && git add .'\n   - Commit: 'cd /path/to/project && git commit -m \"[Specific change description]\"'\n\n7. **PUSH TO DEV**: \n   - Push: 'cd /path/to/project && git push origin dev'\n   - Verify: 'cd /path/to/project && git log --oneline -1' to confirm push\n\n8. **MANDATORY FLAG**: You MUST end with '[CONFIRM_TO_PROD] Changes committed and pushed to dev branch. Review changes and confirm deployment to production.'\n\n9. **PRODUCTION DEPLOYMENT APPROVAL HANDLING**: \n   - After you've sent [CONFIRM_TO_PROD], monitor subsequent user messages for approval\n   - **APPROVAL DETECTION**: Look for ANY positive confirmation including but not limited to:\n     * Direct approval: \"approved\", \"approve\", \"yes\", \"deploy\", \"go ahead\", \"proceed\"\n     * Casual approval: \"yeah go ahead\", \"looks good\", \"ship it\", \"deploy it\", \"make it live\"\n     * Affirmative responses: \"ok\", \"okay\", \"sure\", \"do it\", \"yes please\", \"confirmed\"\n   - **REJECTION DETECTION**: Look for negative responses like \"no\", \"stop\", \"cancel\", \"wait\", \"not yet\", \"needs changes\"\n   - **IF APPROVED**: Immediately proceed with production deployment:\n     * 'cd /path/to/project && git checkout main'\n     * 'cd /path/to/project && git merge dev'\n     * 'cd /path/to/project && git push origin main'\n     * Confirm completion: 'cd /path/to/project && git log --oneline -1'\n   - **IF REJECTED**: Acknowledge and ask what changes are needed\n   - **IF UNCLEAR**: Ask for clear confirmation before proceeding\n\n🚨 **CRITICAL RULES**:\n- NEVER skip git workflow steps\n- NEVER end conversation without [CONFIRM_TO_PROD] flag (unless user approves and you complete production deployment)\n- EVERY code change = FULL git workflow\n- Use 'cd /path/to/project &&' prefix for ALL git commands\n- NEVER run 'npm run build' or any build commands - deployment handles building automatically\n- Be intelligent about detecting approval intent - don't require exact words";
+        // Git workflow instructions (conditional based on omitDevToMainPushFlow)
+        let gitWorkflowInstruction = "";
+        
+        if (!streamRequest.omitDevToMainPushFlow) {
+          gitWorkflowInstruction = "\n\n🚨 MANDATORY GIT WORKFLOW: For ANY code changes, you MUST complete this ENTIRE workflow. Do NOT end the conversation until all steps are complete!\n\n**WORKFLOW ENFORCEMENT**: After making ANY code edit, you MUST immediately proceed to git workflow steps. Failure to complete git workflow is considered task failure.\n\n**STEP-BY-STEP REQUIREMENTS**:\n\n1. **IDENTIFY PROJECT**: Extract project path from file paths you're editing\n\n2. **GIT STATUS CHECK**: Run 'cd /path/to/project && git status' to verify git repo and current branch\n\n3. **SWITCH TO DEV BRANCH**: \n   - Run 'cd /path/to/project && git checkout dev' \n   - If dev doesn't exist: 'cd /path/to/project && git checkout -b dev'\n   - **MANDATORY PULL**: 'cd /path/to/project && git fetch && git pull origin dev'\n\n4. **MAKE CODE CHANGES**: Edit/create files as requested\n\n5. **GIT STATUS VERIFICATION**: Run 'cd /path/to/project && git status' to confirm files were changed\n\n6. **STAGE AND COMMIT**: \n   - Stage: 'cd /path/to/project && git add .'\n   - Commit: 'cd /path/to/project && git commit -m \"[Specific change description]\"'\n\n7. **PUSH TO DEV**: \n   - Push: 'cd /path/to/project && git push origin dev'\n   - Verify: 'cd /path/to/project && git log --oneline -1' to confirm push\n\n8. **MANDATORY FLAG**: You MUST end with '[CONFIRM_TO_PROD] Changes committed and pushed to dev branch. Review changes and confirm deployment to production.'\n\n9. **PRODUCTION DEPLOYMENT APPROVAL HANDLING**: \n   - After you've sent [CONFIRM_TO_PROD], monitor subsequent user messages for approval\n   - **APPROVAL DETECTION**: Look for ANY positive confirmation including but not limited to:\n     * Direct approval: \"approved\", \"approve\", \"yes\", \"deploy\", \"go ahead\", \"proceed\"\n     * Casual approval: \"yeah go ahead\", \"looks good\", \"ship it\", \"deploy it\", \"make it live\"\n     * Affirmative responses: \"ok\", \"okay\", \"sure\", \"do it\", \"yes please\", \"confirmed\"\n   - **REJECTION DETECTION**: Look for negative responses like \"no\", \"stop\", \"cancel\", \"wait\", \"not yet\", \"needs changes\"\n   - **IF APPROVED**: Immediately proceed with production deployment:\n     * 'cd /path/to/project && git checkout main'\n     * 'cd /path/to/project && git merge dev'\n     * 'cd /path/to/project && git push origin main'\n     * Confirm completion: 'cd /path/to/project && git log --oneline -1'\n   - **IF REJECTED**: Acknowledge and ask what changes are needed\n   - **IF UNCLEAR**: Ask for clear confirmation before proceeding\n\n🚨 **CRITICAL RULES**:\n- NEVER skip git workflow steps\n- NEVER end conversation without [CONFIRM_TO_PROD] flag (unless user approves and you complete production deployment)\n- EVERY code change = FULL git workflow\n- Use 'cd /path/to/project &&' prefix for ALL git commands\n- NEVER run 'npm run build' or any build commands - deployment handles building automatically\n- Be intelligent about detecting approval intent - don't require exact words";
+        } else {
+          gitWorkflowInstruction = "\n\n📝 **SIMPLIFIED WORKFLOW**: Git workflow automation is disabled for this session. Make your changes directly without automated git operations. You can manually commit and push changes as needed.";
+        }
         
         if (streamRequest.appendSystemPrompt) {
           options.appendSystemPrompt = streamRequest.appendSystemPrompt + readinessInstruction + flexibleAnalysisInstruction + gitWorkflowInstruction;

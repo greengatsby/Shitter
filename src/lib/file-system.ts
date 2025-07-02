@@ -15,8 +15,11 @@ const cloneLocks = new Map<string, Promise<any>>();
 // Use environment variable if set, otherwise use environment-specific defaults
 const BASE_CLONE_PATH = process.env.CLONE_REPOS_PATH || 
   (process.env.NODE_ENV === 'production' 
-    ? '/home/ismae/editable-claude-projects'  // Production path for Ubuntu VPS
-    : '/home/ismae/editable-claude-projects');  // Development path relative to project root
+    ? '/home/ismae/apps/editable-claude-projects'  // Production path for Ubuntu VPS
+    : '/home/ismae/apps/editable-claude-projects');  // Development path relative to project root
+
+// Get the STEER_PROJECTS_DIR_BASE for the new structure
+const STEER_PROJECTS_DIR_BASE = process.env.STEER_PROJECTS_DIR_BASE || BASE_CLONE_PATH;
 
 export interface CloneResult {
   success: boolean;
@@ -43,6 +46,18 @@ async function ensureBaseDirectory(): Promise<void> {
 }
 
 /**
+ * Ensures the STEER base directory exists, creates it if it doesn't
+ */
+async function ensureSteerBaseDirectory(): Promise<void> {
+  try {
+    await fs.promises.access(STEER_PROJECTS_DIR_BASE);
+  } catch {
+    await fs.promises.mkdir(STEER_PROJECTS_DIR_BASE, { recursive: true });
+    console.log(`✅ Created STEER base directory: ${STEER_PROJECTS_DIR_BASE}`);
+  }
+}
+
+/**
  * Ensures the organization directory exists, creates it if it doesn't
  */
 async function ensureOrganizationDirectory(organizationId: string): Promise<string> {
@@ -54,6 +69,25 @@ async function ensureOrganizationDirectory(organizationId: string): Promise<stri
     console.log(`✅ Created organization directory: ${orgPath}`);
   }
   return orgPath;
+}
+
+/**
+ * Ensures the new structured directory exists: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+ */
+async function ensureStructuredDirectory(orgId: string, memberEmail: string, repoName: string): Promise<string> {
+  await ensureSteerBaseDirectory();
+  
+  const fullPath = path.join(STEER_PROJECTS_DIR_BASE, orgId, memberEmail, repoName);
+  
+  try {
+    await fs.promises.access(fullPath);
+    console.log(`📁 Structured directory already exists: ${fullPath}`);
+  } catch {
+    await fs.promises.mkdir(fullPath, { recursive: true });
+    console.log(`✅ Created structured directory: ${fullPath}`);
+  }
+  
+  return fullPath;
 }
 
 /**
@@ -97,6 +131,145 @@ async function getInstallationToken(installationId: number): Promise<string> {
     console.error(`❌ Error getting installation token for ${installationId}:`, error);
     throw new Error(`Failed to get installation token: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+/**
+ * Clones a repository using the new structured path: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+ * @param repositoryId - The UUID of the repository in our database
+ * @param orgId - Organization ID
+ * @param memberEmail - Member email for the directory structure
+ * @param branch - Optional branch to clone, defaults to repository's default branch
+ * @param shallow - Whether to perform a shallow clone (faster, smaller), defaults to true
+ */
+export async function cloneRepositoryWithStructuredPath(
+  repositoryId: string,
+  orgId: string,
+  memberEmail: string,
+  branch?: string,
+  shallow: boolean = true
+): Promise<CloneResult> {
+  // Use repository-specific lock to prevent concurrent operations
+  const repositoryKey = `structured-repo-${repositoryId}-${orgId}-${memberEmail}`;
+  
+  return acquireRepositoryLock(repositoryKey, async () => {
+    try {
+      console.log(`🚀 Starting structured clone process for repository ID: ${repositoryId}, org: ${orgId}, member: ${memberEmail}`);
+      
+      // Get repository data from database
+      const { data: repoData, error: repoError } = await githubHelpers.getRepositoryFromDatabase(repositoryId);
+      
+      if (repoError || !repoData) {
+        console.error(`❌ Repository not found:`, repoError);
+        return {
+          success: false,
+          repositoryPath: '',
+          error: `Repository not found: ${repoError?.message || 'Unknown error'}`
+        };
+      }
+
+      console.log(`📋 Found repository: ${repoData.full_name}`);
+
+      // Create the structured directory path
+      const structuredPath = await ensureStructuredDirectory(orgId, memberEmail, repoData.name);
+      
+      const targetBranch = branch || repoData.default_branch || 'main';
+      
+      // Check if directory already exists and has git repo
+      try {
+        await fs.promises.access(path.join(structuredPath, '.git'));
+        console.log(`📁 Git repository already exists at: ${structuredPath}`);
+        
+        // Refresh token and update remote URL before pulling
+        console.log(`🔄 Refreshing token and pulling latest changes...`);
+        const freshToken = await getInstallationToken(repoData.installation_id);
+        const freshCloneUrl = repoData.clone_url.replace(
+          'https://github.com/',
+          `https://x-access-token:${freshToken}@github.com/`
+        );
+        
+        // Update remote URL with fresh token (use execFileAsync for security)
+        await execFileAsync('git', ['-C', structuredPath, 'remote', 'set-url', 'origin', freshCloneUrl]);
+        
+        // Pull latest changes
+        await execFileAsync('git', ['-C', structuredPath, 'pull']);
+        
+        return {
+          success: true,
+          repositoryPath: structuredPath,
+          repositoryInfo: {
+            id: repoData.id,
+            name: repoData.name,
+            fullName: repoData.full_name,
+            cloneUrl: repoData.clone_url
+          }
+        };
+      } catch {
+        // Repository doesn't exist or isn't a git repo, need to clone
+        console.log(`📥 Repository not found at ${structuredPath}, proceeding with clone...`);
+        
+        // Check if directory exists but isn't a git repo
+        try {
+          const dirContents = await fs.promises.readdir(structuredPath);
+          if (dirContents.length > 0) {
+            console.log(`🗑️ Removing non-git directory content: ${structuredPath}`);
+            await fs.promises.rm(structuredPath, { recursive: true, force: true });
+            await ensureStructuredDirectory(orgId, memberEmail, repoData.name);
+          }
+        } catch {
+          // Directory is empty or doesn't exist, which is fine
+        }
+      }
+
+      // Get installation token for authentication
+      const installationToken = await getInstallationToken(repoData.installation_id);
+      
+      // Create authenticated clone URL
+      const cloneUrl = repoData.clone_url.replace(
+        'https://github.com/',
+        `https://x-access-token:${installationToken}@github.com/`
+      );
+
+      // Log with masked token for security
+      console.log(`📥 Cloning repository from: ${maskTokenInUrl(cloneUrl)} to: ${structuredPath}`);
+      
+      // Prepare git clone arguments (use execFileAsync to avoid shell injection)
+      const gitArgs = ['clone'];
+      
+      // Add branch specification
+      gitArgs.push('--branch', targetBranch);
+      
+      // Add URLs - clone directly into the structured path
+      gitArgs.push(cloneUrl, structuredPath);
+      
+      // Clone the repository using execFileAsync for security
+      const { stdout, stderr } = await execFileAsync('git', gitArgs);
+      
+      if (stderr && !stderr.includes('Cloning into')) {
+        console.error(`⚠️  Git clone stderr:`, stderr);
+      }
+      
+      console.log(`✅ Repository cloned successfully to structured path`);
+
+      return {
+        success: true,
+        repositoryPath: structuredPath,
+        repositoryInfo: {
+          id: repoData.id,
+          name: repoData.name,
+          fullName: repoData.full_name,
+          cloneUrl: repoData.clone_url
+        }
+      };
+
+    } catch (error) {
+      console.error(`💥 Error cloning repository with structured path:`, error);
+      return {
+        success: false,
+        repositoryPath: '',
+        error: `Failed to clone repository: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  });
 }
 
 /**

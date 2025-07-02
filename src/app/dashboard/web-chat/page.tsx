@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   MessageSquare,
   Users,
@@ -18,7 +19,8 @@ import {
   Phone,
   Mail,
   GitBranch,
-  Github
+  Github,
+  Settings
 } from "lucide-react"
 import { supabase, githubHelpers } from '@/utils/supabase'
 import { useRouter } from 'next/navigation'
@@ -87,6 +89,9 @@ export default function WebChatPage() {
   const [error, setError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [showWebChat, setShowWebChat] = useState(false)
+  const [omitGitWorkflow, setOmitGitWorkflow] = useState(false)
+  const [cloningInProgress, setCloningInProgress] = useState(false)
+  const [projectPath, setProjectPath] = useState<string>('')
   const {isOrgOwner, isOrgMember, isLoading} = useAuth()
 
   useEffect(() => {
@@ -218,7 +223,7 @@ export default function WebChatPage() {
     }
   }
 
-  const handleStartChat = () => {
+  const handleStartChat = async () => {
     if (!selectedMember) {
       setError('Please select a team member to start a chat.')
       return
@@ -232,10 +237,48 @@ export default function WebChatPage() {
     const member = members.find(m => m.id === selectedMember)
     const repository = repositories.find(r => r.id === selectedRepository)
     
-    if (member && repository) {
+    if (!member || !repository || !currentOrg) {
+      setError('Unable to find selected member, repository, or organization.')
+      return
+    }
+
+    try {
+      setCloningInProgress(true)
+      setError('')
+
       console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
-      setError('') // Clear any previous errors
+      
+      // Clone repository using the new structured path via API: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+      const cloneResponse = await fetch('/api/clone-repository', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryId: repository.id,
+          orgId: currentOrg.organization.id,
+          memberEmail: member.user.email,
+          branch: undefined // Use default branch
+        }),
+      });
+
+      const cloneResult = await cloneResponse.json();
+
+      if (!cloneResponse.ok || !cloneResult.success) {
+        throw new Error(cloneResult.error || 'Failed to clone repository')
+      }
+
+      console.log(`✅ Repository cloned successfully to: ${cloneResult.repositoryPath}`)
+      
+      // Use the relative project path returned from the API
+      setProjectPath(cloneResult.relativeProjectPath)
       setShowWebChat(true)
+
+    } catch (err) {
+      console.error('❌ Error starting chat:', err)
+      setError(err instanceof Error ? err.message : 'Failed to start chat session')
+    } finally {
+      setCloningInProgress(false)
     }
   }
 
@@ -350,7 +393,12 @@ export default function WebChatPage() {
           </div>
         </div>
         {selectedMemberData && selectedRepositoryData && (
-          <WebChat member={selectedMemberData} repository={selectedRepositoryData} />
+          <WebChat 
+            member={selectedMemberData} 
+            repository={selectedRepositoryData}
+            projectPath={projectPath}
+            omitDevToMainPushFlow={omitGitWorkflow}
+          />
         )}
       </div>
     )
@@ -503,25 +551,64 @@ export default function WebChatPage() {
           </Card>
         </div>
 
-        {/* Action Button */}
+        {/* Settings and Action */}
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex justify-center">
-              <Button 
-                onClick={handleStartChat} 
-                disabled={!selectedMember || !selectedRepository}
-                className="min-w-48"
-                size="lg"
-              >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Start Web Chat Session
-              </Button>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Chat Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {/* Git Workflow Toggle */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium">Git Workflow</h4>
+                  <p className="text-sm text-gray-600">
+                    Automatically commit to dev branch and ask for production deployment
+                  </p>
+                </div>
+                <Switch
+                  checked={!omitGitWorkflow}
+                  onCheckedChange={(checked) => setOmitGitWorkflow(!checked)}
+                />
+              </div>
+
+              {/* Start Chat Button */}
+              <div className="flex justify-center pt-2">
+                <Button 
+                  onClick={handleStartChat} 
+                  disabled={!selectedMember || !selectedRepository || cloningInProgress}
+                  className="min-w-48"
+                  size="lg"
+                >
+                  {cloningInProgress ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Preparing Repository...
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Start Web Chat Session
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {(!selectedMember || !selectedRepository) && !cloningInProgress && (
+                <p className="text-center text-sm text-gray-500">
+                  Please select both a team member and repository to continue
+                </p>
+              )}
+              
+              {cloningInProgress && (
+                <p className="text-center text-sm text-blue-600">
+                  Setting up repository with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.email}/{repositories.find(r => r.id === selectedRepository)?.name}
+                </p>
+              )}
             </div>
-            {(!selectedMember || !selectedRepository) && (
-              <p className="text-center text-sm text-gray-500 mt-2">
-                Please select both a team member and repository to continue
-              </p>
-            )}
           </CardContent>
         </Card>
 

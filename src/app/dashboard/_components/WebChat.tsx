@@ -55,9 +55,11 @@ interface RequestSettings {
 interface ComponentProps {
     member: Member
     repository: Repository,
+    projectPath?: string,
+    omitDevToMainPushFlow?: boolean,
 }
 
-export default function ClaudeTestPage({ member, repository }: ComponentProps) {
+export default function ClaudeTestPage({ member, repository, projectPath, omitDevToMainPushFlow }: ComponentProps) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<ClaudeResponse | null>(null);
@@ -307,6 +309,9 @@ export default function ClaudeTestPage({ member, repository }: ComponentProps) {
         ...(settings.appendSystemPrompt && { appendSystemPrompt: settings.appendSystemPrompt }),
         ...(settings.allowedTools && { allowedTools: settings.allowedTools }),
         ...(settings.disallowedTools && { disallowedTools: settings.disallowedTools }),
+        // Include new parameters passed from parent
+        ...(projectPath && { projectPath }),
+        ...(omitDevToMainPushFlow !== undefined && { omitDevToMainPushFlow }),
       };
 
       // Log session information for debugging
