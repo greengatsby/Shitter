@@ -57,7 +57,8 @@ async function sendToClaudeCode(prompt: string, userContext?: UserContext): Prom
         maxTurns: 50,
         continue_conversation: true, // Enable session continuation for SMS
         verbose: false,
-        projectPath: `${userContext?.organizationName}/${userContext?.phoneNumber}`,
+        projectPath: `${userContext?.organizationId}/${userContext?.phoneNumber}`,
+        requestSource: 'sms',
         // User context for SMS requests
         userContext: userContext ? {
           userId: userContext.user.id,

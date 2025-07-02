@@ -18,6 +18,7 @@ interface StreamRequest {
   verbose?: boolean;
   projectPath?: string;
   omitDevToMainPushFlow?: boolean;
+  requestSource?: 'sms' | 'web-chat';
 }
 
 interface StreamResponse {
@@ -180,6 +181,12 @@ export async function POST(request: NextRequest) {
 // Main streaming handler
 async function handleStreamRequest(streamRequest: StreamRequest): Promise<Response> {
   const sessionId = streamRequest.session_id;
+
+  if(streamRequest.requestSource === 'sms') {
+    console.log('DEBUG: SMS request source detected');
+  } else if(streamRequest.requestSource === 'web-chat') {
+    console.log('DEBUG: Web chat request source detected');
+  }
 
   // Validate that ANTHROPIC_API_KEY is set
   if (!process.env.ANTHROPIC_API_KEY) {
