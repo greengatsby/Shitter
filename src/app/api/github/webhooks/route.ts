@@ -213,7 +213,7 @@ async function handleRepositoriesEvent(payload: WebhookEvent, deliveryId: string
       case 'added':
         // Repositories added to installation
         if (repositories && repositories.length > 0) {
-          await githubHelpers.saveRepositoriesForInstallation(installation.id, repositories)
+          await githubHelpers.saveRepositoriesToDatabase(installation.id, repositories)
         }
         break
 
@@ -255,8 +255,8 @@ async function handleRepositoryEvent(payload: WebhookEvent, deliveryId: string) 
       case 'publicized':
       case 'privatized':
         // Repository created or visibility changed - resync
-        const repositories = await githubAppService.getInstallationRepositories(installation.id)
-        await githubHelpers.saveRepositoriesForInstallation(installation.id, repositories)
+        const repositories = await githubAppService.fetchRepositoriesFromGitHub(installation.id)
+        await githubHelpers.saveRepositoriesToDatabase(installation.id, repositories)
         break
 
       case 'deleted':

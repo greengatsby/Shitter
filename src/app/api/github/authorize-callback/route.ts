@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { githubHelpers } from '@/utils/supabase'
 import { githubAppService } from '@/lib/github-app'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+
 // GET /api/github/authorize-callback - Handle GitHub App installation callback
 export async function GET(request: NextRequest) {
   // Helper function to create redirect URLs with correct protocol
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
       
       // Store the installation without organization mapping for now
       try {
-        const installation = await githubAppService.getInstallation(parseInt(installationId))
+        const installation = await githubAppService.fetchInstallationFromGitHub(parseInt(installationId))
         
         const installationData = {
           installation_id: installation.id,
@@ -101,7 +104,7 @@ export async function GET(request: NextRequest) {
         }
       } else {
         // Installation doesn't exist, create it
-        const installation = await githubAppService.getInstallation(parseInt(installationId))
+        const installation = await githubAppService.fetchInstallationFromGitHub(parseInt(installationId))
         
         const installationData = {
           installation_id: installation.id,
@@ -133,8 +136,8 @@ export async function GET(request: NextRequest) {
 
       // Sync repositories
       try {
-        const repositories = await githubAppService.getInstallationRepositories(parseInt(installationId))
-        await githubHelpers.saveRepositoriesForInstallation(parseInt(installationId), repositories)
+        const repositories = await githubAppService.fetchRepositoriesFromGitHub(parseInt(installationId))
+        await githubHelpers.saveRepositoriesToDatabase(parseInt(installationId), repositories)
         console.log(`Synced ${repositories.length} repositories`)
       } catch (repoError) {
         console.error('Error syncing repositories:', repoError)

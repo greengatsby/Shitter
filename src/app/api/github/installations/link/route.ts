@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
 
     // Sync repositories after linking
     try {
-      const repositories = await githubAppService.getInstallationRepositories(installation_id)
-      await githubHelpers.saveRepositoriesForInstallation(installation_id, repositories)
+      const repositories = await githubAppService.fetchRepositoriesFromGitHub(installation_id)
+      await githubHelpers.saveRepositoriesToDatabase(installation_id, repositories)
       console.log(`Synced ${repositories.length} repositories after linking installation`)
     } catch (repoError) {
       console.error('Error syncing repositories after linking:', repoError)

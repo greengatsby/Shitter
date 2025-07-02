@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { githubHelpers } from '@/utils/supabase'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+
 // GET /api/github/installations - Get GitHub App installations for organization from our database
 export async function GET(request: NextRequest) {
   try {
