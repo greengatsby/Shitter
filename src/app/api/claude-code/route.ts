@@ -214,6 +214,8 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
         const projectDir = streamRequest.projectPath 
           ? path.join(getProjectDirectory(), streamRequest.projectPath)
           : getProjectDirectory();
+
+        console.log('DEBUG: Project directory', projectDir);
         const options: any = {
           maxTurns: MAX_TURNS,
           outputFormat: 'stream-json', // Force stream-json for real-time updates

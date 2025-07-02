@@ -97,6 +97,27 @@ interface Repository {
   }
 }
 
+interface RepositoryAssignment {
+  id: string
+  user_id: string
+  repository_id: string
+  role: string
+  permissions: string[]
+  created_at: string
+  user: {
+    id: string
+    email: string
+    full_name: string | null
+    phone_number: string | null
+    avatar_url: string | null
+  }
+  assigned_by_user: {
+    id: string
+    email: string
+    full_name: string | null
+  }
+}
+
 export default function DashboardPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
@@ -112,6 +133,15 @@ export default function DashboardPage() {
   const [githubConnecting, setGithubConnecting] = useState(false)
   const [syncingRepositories, setSyncingRepositories] = useState(false)
   const [repositoryFilter, setRepositoryFilter] = useState<string>('all')
+  
+  // Repository assignment states
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null)
+  const [repositoryAssignments, setRepositoryAssignments] = useState<RepositoryAssignment[]>([])
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [assignData, setAssignData] = useState({ user_id: '', role: 'developer' })
+  // Track all repository assignments to show unassigned repos in red
+  const [allRepositoryAssignments, setAllRepositoryAssignments] = useState<Map<string, RepositoryAssignment[]>>(new Map())
 
   // hooks
   // const { user, session } = useAuth()
@@ -312,6 +342,11 @@ export default function DashboardPage() {
         const repoData = await repoResponse.value.json()
         setRepositories(repoData.repositories || [])
         console.log(`📦 Loaded ${repoData.repositories?.length || 0} repositories`)
+        
+        // Load assignments for all repositories
+        if (repoData.repositories && repoData.repositories.length > 0) {
+          loadAllRepositoryAssignments(repoData.repositories)
+        }
       } else {
         console.error('❌ Failed to load repositories')
         setRepositories([])
@@ -333,6 +368,11 @@ export default function DashboardPage() {
     await loadOrganizationData()
     // Reset the flag back to current org to prevent duplicates
     orgDataLoaded.current = currentOrg.organization.id
+    
+    // Refresh assignments after data is reloaded
+    if (repositories.length > 0) {
+      await loadAllRepositoryAssignments(repositories)
+    }
   }
 
   const handleInviteUser = async () => {
@@ -523,6 +563,131 @@ export default function DashboardPage() {
     }
   }
 
+  const openAssignmentDialog = async (repository: Repository) => {
+    setSelectedRepository(repository)
+    setAssignmentDialogOpen(true)
+    await loadRepositoryAssignments(repository.id)
+  }
+
+  const loadRepositoryAssignments = async (repositoryId: string) => {
+    setAssignmentLoading(true)
+    try {
+      const response = await fetch(`/api/github/repositories/${repositoryId}/assignments`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load assignments')
+      }
+
+      setRepositoryAssignments(data.assignments || [])
+    } catch (err) {
+      console.error('❌ Error loading repository assignments:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load assignments')
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
+
+  const loadAllRepositoryAssignments = async (repositories: Repository[]) => {
+    try {
+      const assignmentMap = new Map<string, RepositoryAssignment[]>()
+      
+      // Load assignments for all repositories in parallel
+      const assignmentPromises = repositories.map(async (repo) => {
+        try {
+          const response = await fetch(`/api/github/repositories/${repo.id}/assignments`)
+          const data = await response.json()
+          
+          if (response.ok) {
+            assignmentMap.set(repo.id, data.assignments || [])
+          } else {
+            assignmentMap.set(repo.id, [])
+          }
+        } catch (err) {
+          console.error(`❌ Error loading assignments for repo ${repo.name}:`, err)
+          assignmentMap.set(repo.id, [])
+        }
+      })
+      
+      await Promise.all(assignmentPromises)
+      setAllRepositoryAssignments(assignmentMap)
+      
+    } catch (err) {
+      console.error('❌ Error loading all repository assignments:', err)
+    }
+  }
+
+  const handleAssignUser = async () => {
+    if (!selectedRepository || !assignData.user_id) return
+
+    setAssignmentLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`/api/github/repositories/${selectedRepository.id}/assignments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(assignData)
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to assign user')
+      }
+
+      // Reset form and reload assignments
+      setAssignData({ user_id: '', role: 'developer' })
+      await loadRepositoryAssignments(selectedRepository.id)
+      
+      // Refresh the assignment data for all repositories to update the red highlighting
+      await loadAllRepositoryAssignments(repositories)
+      
+    } catch (err) {
+      console.error('❌ Assignment failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to assign user')
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
+
+  const handleRemoveAssignment = async (userId: string) => {
+    if (!selectedRepository) return
+
+    setAssignmentLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch(`/api/github/repositories/${selectedRepository.id}/assignments`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ user_id: userId })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to remove assignment')
+      }
+
+      // Reload assignments
+      await loadRepositoryAssignments(selectedRepository.id)
+      
+      // Refresh the assignment data for all repositories to update the red highlighting
+      await loadAllRepositoryAssignments(repositories)
+      
+    } catch (err) {
+      console.error('❌ Assignment removal failed:', err)
+      setError(err instanceof Error ? err.message : 'Failed to remove assignment')
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'owner': return <Crown className="h-4 w-4 text-yellow-600" />
@@ -537,6 +702,11 @@ export default function DashboardPage() {
       case 'admin': return 'secondary'
       default: return 'outline'
     }
+  }
+
+  const isRepositoryAssigned = (repositoryId: string): boolean => {
+    const assignments = allRepositoryAssignments.get(repositoryId)
+    return assignments ? assignments.length > 0 : false
   }
 
   const hasGitHubConnection = githubInstallations.length > 0
@@ -925,7 +1095,7 @@ export default function DashboardPage() {
                     </Button>
                   )}
                 </div>
-                {repositories.length > 0 && (
+                                  {repositories.length > 0 && (
                   <div className="flex items-center space-x-4 pt-4">
                     <Label htmlFor="installation-filter" className="text-sm font-medium">
                       Filter by Installation:
@@ -946,46 +1116,81 @@ export default function DashboardPage() {
                     <Badge variant="outline" className="ml-auto">
                       {filteredRepositories.length} of {repositories.length} repositories
                     </Badge>
+                    {(() => {
+                      const unassignedCount = filteredRepositories.filter(repo => !isRepositoryAssigned(repo.id)).length
+                      return unassignedCount > 0 ? (
+                        <Badge variant="destructive" className="flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          {unassignedCount} unassigned
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          All assigned
+                        </Badge>
+                      )
+                    })()}
                   </div>
                 )}
               </CardHeader>
               <CardContent>
                 {filteredRepositories.length > 0 ? (
                   <div className="space-y-4">
-                    {filteredRepositories.map((repo) => (
-                      <div key={repo.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center space-x-4">
-                          <GitBranch className="h-6 w-6 text-gray-600" />
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <p className="font-medium">{repo.name}</p>
-                              {repo.private && (
-                                <Badge variant="secondary" className="text-xs">Private</Badge>
+                    {filteredRepositories.map((repo) => {
+                      const isAssigned = isRepositoryAssigned(repo.id)
+                      return (
+                        <div key={repo.id} className={`flex items-center justify-between p-4 border rounded-lg ${!isAssigned ? 'border-red-300 bg-red-50' : ''}`}>
+                          <div className="flex items-center space-x-4">
+                            <GitBranch className={`h-6 w-6 ${!isAssigned ? 'text-red-600' : 'text-gray-600'}`} />
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <p className={`font-medium ${!isAssigned ? 'text-red-900' : ''}`}>{repo.name}</p>
+                                {repo.private && (
+                                  <Badge variant="secondary" className="text-xs">Private</Badge>
+                                )}
+                                {!isAssigned && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    <AlertCircle className="h-3 w-3 mr-1" />
+                                    Unassigned
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className={`text-sm mb-1 ${!isAssigned ? 'text-red-700' : 'text-gray-600'}`}>
+                                {repo.description || 'No description'}
+                              </p>
+                              {!isAssigned && (
+                                <p className="text-xs text-red-600 font-medium mb-1">
+                                  ⚠️ This repository must be assigned to a team member
+                                </p>
                               )}
-                            </div>
-                            <p className="text-sm text-gray-600 mb-1">{repo.description || 'No description'}</p>
-                            <div className="flex items-center space-x-2">
-                              <Github className="h-3 w-3 text-gray-400" />
-                              <span className="text-xs text-gray-500">
-                                @{repo.installation?.account_login || 'Unknown'} 
-                                <span className="ml-1">({repo.installation?.account_type || 'unknown'})</span>
-                              </span>
+                              <div className="flex items-center space-x-2">
+                                <Github className="h-3 w-3 text-gray-400" />
+                                <span className="text-xs text-gray-500">
+                                  @{repo.installation?.account_login || 'Unknown'} 
+                                  <span className="ml-1">({repo.installation?.account_type || 'unknown'})</span>
+                                </span>
+                              </div>
                             </div>
                           </div>
+                          <div className="flex items-center space-x-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={repo.html_url} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="h-4 w-4 mr-2" />
+                                View on GitHub
+                              </a>
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => openAssignmentDialog(repo)}
+                            >
+                              <UserCheck className="h-4 w-4 mr-2" />
+                              Manage Access
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Button variant="outline" size="sm" asChild>
-                            <a href={repo.html_url} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4 mr-2" />
-                              View on GitHub
-                            </a>
-                          </Button>
-                          <Button variant="outline" size="sm">
-                            Manage Access
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-gray-500">
@@ -1015,6 +1220,131 @@ export default function DashboardPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Repository Assignment Dialog */}
+        <Dialog open={assignmentDialogOpen} onOpenChange={setAssignmentDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Manage Repository Access</DialogTitle>
+              <DialogDescription>
+                Assign team members to {selectedRepository?.name} repository
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              {/* Assign New User */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Assign New Member</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="assign-user">Team Member</Label>
+                    <Select
+                      value={assignData.user_id}
+                      onValueChange={(value) => setAssignData(prev => ({ ...prev, user_id: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {members
+                          .filter(member => !repositoryAssignments.some(assignment => assignment.user_id === member.user.id))
+                          .map((member) => (
+                          <SelectItem key={member.user.id} value={member.user.id}>
+                            {member.user.full_name || member.user.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="assign-role">Role</Label>
+                    <Select
+                      value={assignData.role}
+                      onValueChange={(value) => setAssignData(prev => ({ ...prev, role: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="developer">Developer</SelectItem>
+                        <SelectItem value="reviewer">Reviewer</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button 
+                      onClick={handleAssignUser} 
+                      disabled={assignmentLoading || !assignData.user_id}
+                      className="w-full"
+                    >
+                      {assignmentLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Assigning...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Assign
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Current Assignments */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Current Assignments</h4>
+                {assignmentLoading && repositoryAssignments.length === 0 ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                  </div>
+                ) : repositoryAssignments.length > 0 ? (
+                  <div className="space-y-3">
+                    {repositoryAssignments.map((assignment) => (
+                      <div key={assignment.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                            {assignment.user.full_name?.charAt(0) || assignment.user.email.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-medium">{assignment.user.full_name || 'Unknown'}</p>
+                            <p className="text-sm text-gray-600">{assignment.user.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Badge variant="outline">{assignment.role}</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveAssignment(assignment.user_id)}
+                            disabled={assignmentLoading}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    No members assigned to this repository yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAssignmentDialogOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

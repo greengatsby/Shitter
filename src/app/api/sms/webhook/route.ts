@@ -20,9 +20,33 @@ interface ClaudeResponse {
   result?: string;
 }
 
-async function sendToClaudeCode(prompt: string, userId?: string): Promise<ClaudeResponse> {
+interface UserContext {
+  user: any;
+  phoneNumber: string;
+  organizationId: string | null;
+  organizationName: string | null;
+  organizationRole: string | null;
+}
+
+async function sendToClaudeCode(prompt: string, userContext?: UserContext): Promise<ClaudeResponse> {
   try {
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/claude-code`, {
+    console.log('📤 Sending to Claude Code with context:', {
+      userId: userContext?.user?.id,
+      phoneNumber: userContext?.phoneNumber,
+      organizationId: userContext?.organizationId,
+      organizationName: userContext?.organizationName,
+      role: userContext?.organizationRole
+    })
+
+    if(!userContext || !userContext.organizationName || !userContext.phoneNumber) {
+      throw new Error('User context is required')
+    }
+
+    const sendTo = `${process.env.NEXTJS_APP_BASE_URL || 'http://localhost:3000'}/api/claude-code`
+
+    console.log('DEBUG: Sending to', sendTo)
+
+    const response = await fetch(sendTo, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -32,7 +56,17 @@ async function sendToClaudeCode(prompt: string, userId?: string): Promise<Claude
         outputFormat: 'stream-json',
         maxTurns: 50,
         continue_conversation: true, // Enable session continuation for SMS
-        verbose: false
+        verbose: false,
+        projectPath: `${userContext?.organizationName}/${userContext?.phoneNumber}`,
+        // User context for SMS requests
+        userContext: userContext ? {
+          userId: userContext.user.id,
+          phoneNumber: userContext.phoneNumber,
+          organizationId: userContext.organizationId,
+          organizationName: userContext.organizationName,
+          role: userContext.organizationRole,
+          requestSource: 'sms'
+        } : null
       }),
     });
 
@@ -224,6 +258,46 @@ export async function POST(request: NextRequest) {
         
         return NextResponse.json({ success: true })
       }
+
+      // Get user's organization membership
+      const { data: orgMembership, error: orgError } = await supabaseAdmin
+        .from('organization_members')
+        .select('id, organization_id, role')
+        .eq('user_id', user.id)
+        .not('joined_at', 'is', null) // Only get active memberships
+        .single()
+
+      if (orgError && orgError.code !== 'PGRST116') { // PGRST116 is "no rows found"
+        console.error('Error fetching organization membership:', orgError)
+      }
+
+      // Get organization details if membership exists
+      let organizationName = null
+      if (orgMembership?.organization_id) {
+        const { data: org } = await supabaseAdmin
+          .from('organizations')
+          .select('name')
+          .eq('id', orgMembership.organization_id)
+          .single()
+        organizationName = org?.name || null
+      }
+
+      const userContext = {
+        user,
+        phoneNumber: fromNumber,
+        organizationId: orgMembership?.organization_id || null,
+        organizationName,
+        organizationRole: orgMembership?.role || null
+      }
+
+      console.log('📱 User context:', {
+        userId: user.id,
+        userName: user.full_name || user.email,
+        phoneNumber: fromNumber,
+        organizationId: userContext.organizationId,
+        organizationName: userContext.organizationName,
+        role: userContext.organizationRole
+      })
       
       let result
       
@@ -233,7 +307,7 @@ export async function POST(request: NextRequest) {
       const isCodingRelated = codingKeywords.some(keyword => lowerText.includes(keyword))
       
       if (isCodingRelated) {
-        result = await processCodingMessage(messageText, user)
+        result = await processCodingMessage(messageText, userContext)
       } else if (hasMedia) {
         const imageMedia = message.media.filter((media: any) => 
           media.content_type && media.content_type.startsWith('image/')
@@ -272,10 +346,10 @@ export async function POST(request: NextRequest) {
           `${messageText}\n${mediaContext}` : 
           mediaContext
         
-        result = await processUnifiedMessage(fullMessage, user)
+        result = await processUnifiedMessage(fullMessage, userContext)
       } else {
         // No media - process as regular text message
-        result = await processUnifiedMessage(messageText, user)
+        result = await processUnifiedMessage(messageText, userContext)
       }
       
       // Send response SMS
@@ -398,9 +472,9 @@ function truncateForSMS(message: string): string {
 }
 
 // Process coding-related messages through Claude Code SDK
-async function processCodingMessage(message: string, user: any) {
+async function processCodingMessage(message: string, userContext: UserContext) {
   try {
-    const claudeResponse = await sendToClaudeCode(message, user.id)
+    const claudeResponse = await sendToClaudeCode(message, userContext)
     
     let responseText = ''
     if (claudeResponse.success) {
@@ -420,10 +494,10 @@ async function processCodingMessage(message: string, user: any) {
 }
 
 // Unified message processing function
-async function processUnifiedMessage(message: string, user: any) {
+async function processUnifiedMessage(message: string, userContext: UserContext) {
   try {
     // For now, route everything to Claude Code SDK for simplicity
-    const claudeResponse = await sendToClaudeCode(message, user.id)
+    const claudeResponse = await sendToClaudeCode(message, userContext)
     
     let responseText = ''
     if (claudeResponse.success) {

@@ -72,12 +72,27 @@ async function ensureOrganizationDirectory(organizationId: string): Promise<stri
 }
 
 /**
- * Ensures the new structured directory exists: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+ * Sanitizes a phone number to be safe for use as a directory name
+ * Removes or replaces characters that might cause issues in file paths
  */
-async function ensureStructuredDirectory(orgId: string, memberEmail: string, repoName: string): Promise<string> {
+function sanitizePhoneNumber(phoneNumber: string): string {
+  // Remove all non-alphanumeric characters and replace with underscores
+  // Keep only digits, letters, and convert spaces/special chars to underscores
+  return phoneNumber
+    .replace(/[^\w\d]/g, '_')  // Replace non-word chars with underscore
+    .replace(/_+/g, '_')       // Replace multiple underscores with single
+    .replace(/^_|_$/g, '');    // Remove leading/trailing underscores
+}
+
+/**
+ * Ensures the new structured directory exists: STEER_PROJECTS_DIR_BASE/orgId/memberPhoneNumber/repoName
+ */
+async function ensureStructuredDirectory(orgId: string, memberPhoneNumber: string, repoName: string): Promise<string> {
   await ensureSteerBaseDirectory();
   
-  const fullPath = path.join(STEER_PROJECTS_DIR_BASE, orgId, memberEmail, repoName);
+  // Sanitize phone number for safe directory name
+  const sanitizedPhone = sanitizePhoneNumber(memberPhoneNumber);
+  const fullPath = path.join(STEER_PROJECTS_DIR_BASE, orgId, sanitizedPhone, repoName);
   
   try {
     await fs.promises.access(fullPath);
@@ -134,26 +149,27 @@ async function getInstallationToken(installationId: number): Promise<string> {
 }
 
 /**
- * Clones a repository using the new structured path: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+ * Clones a repository using the new structured path: STEER_PROJECTS_DIR_BASE/orgId/memberPhoneNumber/repoName
  * @param repositoryId - The UUID of the repository in our database
  * @param orgId - Organization ID
- * @param memberEmail - Member email for the directory structure
+ * @param memberPhoneNumber - Member phone number for the directory structure
  * @param branch - Optional branch to clone, defaults to repository's default branch
  * @param shallow - Whether to perform a shallow clone (faster, smaller), defaults to true
  */
 export async function cloneRepositoryWithStructuredPath(
   repositoryId: string,
   orgId: string,
-  memberEmail: string,
+  memberPhoneNumber: string,
   branch?: string,
   shallow: boolean = true
 ): Promise<CloneResult> {
   // Use repository-specific lock to prevent concurrent operations
-  const repositoryKey = `structured-repo-${repositoryId}-${orgId}-${memberEmail}`;
+  const sanitizedPhone = sanitizePhoneNumber(memberPhoneNumber);
+  const repositoryKey = `structured-repo-${repositoryId}-${orgId}-${sanitizedPhone}`;
   
   return acquireRepositoryLock(repositoryKey, async () => {
     try {
-      console.log(`🚀 Starting structured clone process for repository ID: ${repositoryId}, org: ${orgId}, member: ${memberEmail}`);
+      console.log(`🚀 Starting structured clone process for repository ID: ${repositoryId}, org: ${orgId}, member phone: ${memberPhoneNumber}`);
       
       // Get repository data from database
       const { data: repoData, error: repoError } = await githubHelpers.getRepositoryFromDatabase(repositoryId);
@@ -170,7 +186,7 @@ export async function cloneRepositoryWithStructuredPath(
       console.log(`📋 Found repository: ${repoData.full_name}`);
 
       // Create the structured directory path
-      const structuredPath = await ensureStructuredDirectory(orgId, memberEmail, repoData.name);
+      const structuredPath = await ensureStructuredDirectory(orgId, memberPhoneNumber, repoData.name);
       
       const targetBranch = branch || repoData.default_branch || 'main';
       
@@ -213,7 +229,7 @@ export async function cloneRepositoryWithStructuredPath(
           if (dirContents.length > 0) {
             console.log(`🗑️ Removing non-git directory content: ${structuredPath}`);
             await fs.promises.rm(structuredPath, { recursive: true, force: true });
-            await ensureStructuredDirectory(orgId, memberEmail, repoData.name);
+            await ensureStructuredDirectory(orgId, memberPhoneNumber, repoData.name);
           }
         } catch {
           // Directory is empty or doesn't exist, which is fine

@@ -91,6 +91,7 @@ export default function WebChatPage() {
   const [showWebChat, setShowWebChat] = useState(false)
   const [omitGitWorkflow, setOmitGitWorkflow] = useState(false)
   const [cloningInProgress, setCloningInProgress] = useState(false)
+  const [repositoriesLoading, setRepositoriesLoading] = useState(false)
   const [projectPath, setProjectPath] = useState<string>('')
   const {isOrgOwner, isOrgMember, isLoading} = useAuth()
 
@@ -122,9 +123,18 @@ export default function WebChatPage() {
   useEffect(() => {
     if (currentOrg && isAdmin) {
       loadMembers()
-      loadRepositories()
     }
   }, [currentOrg, isAdmin])
+
+  useEffect(() => {
+    if (selectedMember) {
+      loadRepositoriesForMember(selectedMember)
+    } else {
+      setRepositories([])
+    }
+    // Clear selected repository when member changes
+    setSelectedRepository('')
+  }, [selectedMember])
 
   const loadOrganizations = async () => {
     try {
@@ -187,23 +197,47 @@ export default function WebChatPage() {
     }
   }
 
-  const loadRepositories = async () => {
+  const loadRepositoriesForMember = async (memberId: string) => {
     if (!currentOrg) return
 
     try {
-      console.log(`📦 Loading repositories for organization: ${currentOrg.organization.name}`)
-      const { data: repositories, error } = await githubHelpers.getRepositoriesFromDatabase(currentOrg.organization.id)
+      setRepositoriesLoading(true)
+      setError('')
       
-      if (error) {
-        throw new Error(`Failed to load repositories: ${error.message || error}`)
+      // Find the member to get their phone number
+      const member = members.find(m => m.id === memberId)
+      if (!member) {
+        throw new Error('Member not found')
+      }
+      
+      if (!member.user.phone_number) {
+        throw new Error('Member does not have a phone number')
+      }
+      
+      const phoneNumber = encodeURIComponent(member.user.phone_number)
+      console.log(`📦 Loading repositories for member: ${member.user.full_name || member.user.email} (phone: ${member.user.phone_number})`)
+      
+      const response = await fetch(`/api/github/repositories/assignments/phone/${phoneNumber}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to load member repositories')
       }
 
-      setRepositories(repositories || [])
-      console.log(`✅ Loaded ${repositories?.length || 0} repositories`)
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      setRepositories(data.repositories || [])
+      console.log(`✅ Loaded ${data.repositories?.length || 0} repositories for member`)
       
     } catch (err) {
-      console.error('❌ Error loading repositories:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load repositories')
+      console.error('❌ Error loading member repositories:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load member repositories')
+    } finally {
+      setRepositoriesLoading(false)
     }
   }
 
@@ -242,13 +276,19 @@ export default function WebChatPage() {
       return
     }
 
+    // Check if member has a phone number
+    if (!member.user.phone_number) {
+      setError('Selected member does not have a phone number. Phone number is required for web chat.')
+      return
+    }
+
     try {
       setCloningInProgress(true)
       setError('')
 
       console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
       
-      // Clone repository using the new structured path via API: STEER_PROJECTS_DIR_BASE/orgId/memberEmail/repoName
+      // Clone repository using the new structured path via API: STEER_PROJECTS_DIR_BASE/orgId/memberPhoneNumber/repoName
       const cloneResponse = await fetch('/api/clone-repository', {
         method: 'POST',
         headers: {
@@ -257,7 +297,7 @@ export default function WebChatPage() {
         body: JSON.stringify({
           repositoryId: repository.id,
           orgId: currentOrg.organization.id,
-          memberEmail: member.user.email,
+          memberPhoneNumber: member.user.phone_number,
           branch: undefined // Use default branch
         }),
       });
@@ -500,11 +540,29 @@ export default function WebChatPage() {
                 Select Repository
               </CardTitle>
               <CardDescription>
-                Choose a repository to work with during the chat session.
+                {selectedMember 
+                  ? "Choose from repositories assigned to the selected member."
+                  : "Select a team member first to see their assigned repositories."
+                }
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {repositories.length > 0 ? (
+              {selectedMember && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-blue-800">
+                    <User className="h-4 w-4" />
+                    <span className="font-medium">
+                      Showing repositories for: {members.find(m => m.id === selectedMember)?.user.full_name || members.find(m => m.id === selectedMember)?.user.email}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {repositoriesLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+                  <p className="text-gray-600">Loading repositories...</p>
+                </div>
+              ) : repositories.length > 0 ? (
                 <RadioGroup value={selectedRepository} onValueChange={setSelectedRepository}>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
                     {repositories.map((repo) => (
@@ -543,8 +601,15 @@ export default function WebChatPage() {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <GitBranch className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No Repositories</h3>
-                  <p>No repositories found for this organization.</p>
+                  <h3 className="text-lg font-medium mb-2">
+                    {selectedMember ? "No Assigned Repositories" : "No Repositories"}
+                  </h3>
+                  <p>
+                    {selectedMember 
+                      ? "The selected member has no repositories assigned to them."
+                      : "Select a team member to see their assigned repositories."
+                    }
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -605,7 +670,7 @@ export default function WebChatPage() {
               
               {cloningInProgress && (
                 <p className="text-center text-sm text-blue-600">
-                  Setting up repository with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.email}/{repositories.find(r => r.id === selectedRepository)?.name}
+                  Setting up repository with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.phone_number}/{repositories.find(r => r.id === selectedRepository)?.name}
                 </p>
               )}
             </div>

@@ -4,29 +4,29 @@ import { cloneRepositoryWithStructuredPath } from '@/lib/file-system';
 interface CloneRequest {
   repositoryId: string;
   orgId: string;
-  memberEmail: string;
+  memberPhoneNumber: string;
   branch?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: CloneRequest = await request.json();
-    const { repositoryId, orgId, memberEmail, branch } = body;
+    const { repositoryId, orgId, memberPhoneNumber, branch } = body;
 
-    if (!repositoryId || !orgId || !memberEmail) {
+    if (!repositoryId || !orgId || !memberPhoneNumber) {
       return NextResponse.json(
-        { error: 'Missing required parameters: repositoryId, orgId, memberEmail' },
+        { error: 'Missing required parameters: repositoryId, orgId, memberPhoneNumber' },
         { status: 400 }
       );
     }
 
-    console.log(`🚀 Starting clone process for repository: ${repositoryId}, org: ${orgId}, member: ${memberEmail}`);
+    console.log(`🚀 Starting clone process for repository: ${repositoryId}, org: ${orgId}, member phone: ${memberPhoneNumber}`);
 
     // Clone repository using the structured path
     const cloneResult = await cloneRepositoryWithStructuredPath(
       repositoryId,
       orgId,
-      memberEmail,
+      memberPhoneNumber,
       branch,
       true // Shallow clone
     );
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Repository cloned successfully to: ${cloneResult.repositoryPath}`);
 
     // Return success with the relative path for claude-code API
-    const relativeProjectPath = `${orgId}/${memberEmail}/${cloneResult.repositoryInfo?.name}`;
+    const relativeProjectPath = `${orgId}/${memberPhoneNumber}/${cloneResult.repositoryInfo?.name}`;
 
     return NextResponse.json({
       success: true,
