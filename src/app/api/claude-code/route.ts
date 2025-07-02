@@ -38,6 +38,22 @@ interface FinalResponse {
 
 const MAX_TURNS = 50;
 
+// Utility function to sanitize phone numbers in project paths
+function sanitizeProjectPath(projectPath: string): string {
+  // Split the path and sanitize each segment that looks like a phone number
+  return projectPath.split('/').map(segment => {
+    // If segment starts with + and contains mostly digits, it's likely a phone number
+    if (segment.startsWith('+') && /^\+[\d\s\-\(\)]+$/.test(segment)) {
+      // Sanitize phone number: remove non-alphanumeric chars and replace with underscores
+      return segment
+        .replace(/[^\w\d]/g, '_')  // Replace non-word chars with underscore
+        .replace(/_+/g, '_')       // Replace multiple underscores with single
+        .replace(/^_|_$/g, '');    // Remove leading/trailing underscores
+    }
+    return segment;
+  }).join('/');
+}
+
 // Utility function to create SSE formatted data
 function createSSEData(event: string, data: any): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -212,7 +228,7 @@ async function handleStreamRequest(streamRequest: StreamRequest): Promise<Respon
       try {
         // Prepare Claude Code SDK options
         const projectDir = streamRequest.projectPath 
-          ? path.join(getProjectDirectory(), streamRequest.projectPath)
+          ? path.join(getProjectDirectory(), sanitizeProjectPath(streamRequest.projectPath))
           : getProjectDirectory();
 
         console.log('DEBUG: Project directory', projectDir);
