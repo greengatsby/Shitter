@@ -26,6 +26,7 @@ import { supabase, githubHelpers } from '@/utils/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import WebChat from '@/app/dashboard/_components/WebChat'
+import { toast } from 'sonner'
 
 interface Organization {
   id: string
@@ -92,6 +93,7 @@ export default function WebChatPage() {
   const [omitGitWorkflow, setOmitGitWorkflow] = useState(false)
   const [cloningInProgress, setCloningInProgress] = useState(false)
   const [repositoriesLoading, setRepositoriesLoading] = useState(false)
+  const [membersLoading, setMembersLoading] = useState(false)
   const [projectPath, setProjectPath] = useState<string>('')
   const {isOrgOwner, isOrgMember, isLoading} = useAuth()
 
@@ -179,6 +181,8 @@ export default function WebChatPage() {
     if (!currentOrg) return
 
     try {
+      setMembersLoading(true)
+      setError('')
       console.log(`👥 Loading members for organization: ${currentOrg.organization.name}`)
       const response = await fetch(`/api/organizations/${currentOrg.organization.id}/members`)
       
@@ -194,6 +198,8 @@ export default function WebChatPage() {
     } catch (err) {
       console.error('❌ Error loading members:', err)
       setError(err instanceof Error ? err.message : 'Failed to load team members')
+    } finally {
+      setMembersLoading(false)
     }
   }
 
@@ -263,16 +269,15 @@ export default function WebChatPage() {
       return
     }
     
-    if (!selectedRepository) {
-      setError('Please select a repository to work with.')
+    if (repositories.length === 0) {
+      setError('No repositories available for this member.')
       return
     }
     
     const member = members.find(m => m.id === selectedMember)
-    const repository = repositories.find(r => r.id === selectedRepository)
     
-    if (!member || !repository || !currentOrg) {
-      setError('Unable to find selected member, repository, or organization.')
+    if (!member || !currentOrg) {
+      setError('Unable to find selected member or organization.')
       return
     }
 
@@ -286,32 +291,104 @@ export default function WebChatPage() {
       setCloningInProgress(true)
       setError('')
 
-      console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
-      
-      // Clone repository using the new structured path via API: STEER_PROJECTS_DIR_BASE/orgId/memberPhoneNumber/repoName
-      const cloneResponse = await fetch('/api/clone-repository', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          repositoryId: repository.id,
-          orgId: currentOrg.organization.id,
-          memberPhoneNumber: member.user.phone_number,
-          branch: undefined // Use default branch
-        }),
-      });
+      if (selectedRepository) {
+        // Single repository selected
+        const repository = repositories.find(r => r.id === selectedRepository)
+        if (!repository) {
+          setError('Unable to find selected repository.')
+          return
+        }
 
-      const cloneResult = await cloneResponse.json();
+        console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for repository: ${repository.full_name}`)
+        
+        // Clone single repository
+        const cloneResponse = await fetch('/api/clone-repository', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            repositoryId: repository.id,
+            orgId: currentOrg.organization.id,
+            memberPhoneNumber: member.user.phone_number,
+            branch: undefined // Use default branch
+          }),
+        });
 
-      if (!cloneResponse.ok || !cloneResult.success) {
-        throw new Error(cloneResult.error || 'Failed to clone repository')
+        const cloneResult = await cloneResponse.json();
+
+        if (!cloneResponse.ok || !cloneResult.success) {
+          throw new Error(cloneResult.error || 'Failed to clone repository')
+        }
+
+        console.log(`✅ Repository cloned successfully to: ${cloneResult.repositoryPath}`)
+        setProjectPath(cloneResult.relativeProjectPath)
+      } else {
+        // No repository selected - clone all repositories
+        console.log(`🚀 Starting chat with: ${member.user.full_name || member.user.email} for all repositories (${repositories.length} repos)`)
+        
+        // Clone all repositories individually
+        let baseProjectPath = '';
+        let successCount = 0;
+        const errors: string[] = [];
+
+        for (const repository of repositories) {
+          try {
+            console.log(`📦 Cloning repository: ${repository.full_name}`)
+            
+            const cloneResponse = await fetch('/api/clone-repository', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                repositoryId: repository.id,
+                orgId: currentOrg.organization.id,
+                memberPhoneNumber: member.user.phone_number,
+                branch: undefined // Use default branch
+              }),
+            });
+
+            const cloneResult = await cloneResponse.json();
+
+            if (!cloneResponse.ok || !cloneResult.success) {
+              throw new Error(cloneResult.error || `Failed to clone ${repository.name}`)
+            }
+
+            successCount++;
+            
+            // Use the base path (without the specific repo name) for the workspace
+            if (!baseProjectPath && cloneResult.relativeProjectPath) {
+              // Extract base path by removing the last segment (repo name)
+              const pathParts = cloneResult.relativeProjectPath.split('/');
+              baseProjectPath = pathParts.slice(0, -1).join('/');
+            }
+            
+            console.log(`✅ Repository ${repository.name} cloned successfully`)
+            
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : `Failed to clone ${repository.name}`;
+            console.error(`❌ Error cloning ${repository.name}:`, err);
+            errors.push(errorMsg);
+          }
+        }
+
+        // Check if we had any successes
+        if (successCount === 0) {
+          throw new Error(`Failed to clone any repositories: ${errors.join(', ')}`);
+        }
+
+        console.log(`✅ Successfully cloned ${successCount}/${repositories.length} repositories`)
+        
+        if (errors.length > 0) {
+          console.warn(`⚠️ Some repositories failed to clone: ${errors.join(', ')}`);
+          // Still proceed if at least some repositories were cloned successfully
+        }
+        
+        // Use the base path for multiple repositories
+        setProjectPath(baseProjectPath || `${currentOrg.organization.id}/${member.user.phone_number}`);
       }
-
-      console.log(`✅ Repository cloned successfully to: ${cloneResult.repositoryPath}`)
       
-      // Use the relative project path returned from the API
-      setProjectPath(cloneResult.relativeProjectPath)
       setShowWebChat(true)
 
     } catch (err) {
@@ -415,14 +492,14 @@ export default function WebChatPage() {
                 <div>
                   <h1 className="text-2xl font-bold">Web Chat</h1>
                   <p className="text-gray-600">
-                    {selectedMemberData?.user.full_name || selectedMemberData?.user.email} • {selectedRepositoryData?.full_name}
+                    {selectedMemberData?.user.full_name || selectedMemberData?.user.email} • {selectedRepositoryData?.full_name || `All repositories (${repositories.length})`}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">
                   <Github className="h-3 w-3 mr-1" />
-                  {selectedRepositoryData?.name}
+                  {selectedRepositoryData?.name || `${repositories.length} repos`}
                 </Badge>
                 <Badge variant={getRoleBadgeVariant(currentOrg.role)} className="flex items-center gap-1">
                   {getRoleIcon(currentOrg.role)}
@@ -432,10 +509,10 @@ export default function WebChatPage() {
             </div>
           </div>
         </div>
-        {selectedMemberData && selectedRepositoryData && (
+        {selectedMemberData && (
           <WebChat 
             member={selectedMemberData} 
-            repository={selectedRepositoryData}
+            repository={selectedRepositoryData} // Now optional - undefined when multiple repos
             projectPath={projectPath}
             omitDevToMainPushFlow={omitGitWorkflow}
           />
@@ -492,7 +569,12 @@ export default function WebChatPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {members.length > 0 ? (
+              {membersLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+                  <p className="text-gray-600">Loading team members...</p>
+                </div>
+              ) : members.length > 0 ? (
                 <RadioGroup value={selectedMember} onValueChange={setSelectedMember}>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
                     {members.map((member) => (
@@ -535,26 +617,52 @@ export default function WebChatPage() {
           {/* Repository Selection */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GitBranch className="h-5 w-5" />
-                Select Repository
-              </CardTitle>
-              <CardDescription>
-                {selectedMember 
-                  ? "Choose from repositories assigned to the selected member."
-                  : "Select a team member first to see their assigned repositories."
-                }
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <GitBranch className="h-5 w-5" />
+                    Select Repository
+                  </CardTitle>
+                  <CardDescription>
+                    {selectedMember 
+                      ? "Choose a specific repository (optional) or leave unselected to clone all repositories."
+                      : "Select a team member first to see their assigned repositories."
+                    }
+                  </CardDescription>
+                </div>
+                {selectedRepository && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedRepository('')
+                      toast.success('Repository selection cleared - will clone all repositories')
+                    }}
+                    className="shrink-0"
+                  >
+                    Clear Selection
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {selectedMember && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-sm text-blue-800">
-                    <User className="h-4 w-4" />
-                    <span className="font-medium">
-                      Showing repositories for: {members.find(m => m.id === selectedMember)?.user.full_name || members.find(m => m.id === selectedMember)?.user.email}
-                    </span>
+                <div className="mb-4 space-y-3">
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm text-blue-800">
+                      <User className="h-4 w-4" />
+                      <span className="font-medium">
+                        Showing repositories for: {members.find(m => m.id === selectedMember)?.user.full_name || members.find(m => m.id === selectedMember)?.user.email}
+                      </span>
+                    </div>
                   </div>
+                  {repositories.length > 0 && !selectedRepository && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="text-sm text-green-800">
+                        <strong>💡 No repository selected:</strong> All {repositories.length} repositories will be cloned to the workspace
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {repositoriesLoading ? (
@@ -644,7 +752,7 @@ export default function WebChatPage() {
               <div className="flex justify-center pt-2">
                 <Button 
                   onClick={handleStartChat} 
-                  disabled={!selectedMember || !selectedRepository || cloningInProgress}
+                  disabled={!selectedMember || repositories.length === 0 || cloningInProgress}
                   className="min-w-48"
                   size="lg"
                 >
@@ -662,15 +770,18 @@ export default function WebChatPage() {
                 </Button>
               </div>
               
-              {(!selectedMember || !selectedRepository) && !cloningInProgress && (
+              {(!selectedMember || repositories.length === 0) && !cloningInProgress && (
                 <p className="text-center text-sm text-gray-500">
-                  Please select both a team member and repository to continue
+                  {!selectedMember 
+                    ? "Please select a team member to continue"
+                    : "No repositories available for the selected member"
+                  }
                 </p>
               )}
               
               {cloningInProgress && (
                 <p className="text-center text-sm text-blue-600">
-                  Setting up repository with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.phone_number}/{repositories.find(r => r.id === selectedRepository)?.name}
+                  Setting up workspace with structure: {currentOrg?.organization.id}/{members.find(m => m.id === selectedMember)?.user.phone_number}{selectedRepository ? `/${repositories.find(r => r.id === selectedRepository)?.name}` : ` (${repositories.length} repositories)`}
                 </p>
               )}
             </div>

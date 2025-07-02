@@ -54,7 +54,7 @@ interface RequestSettings {
 
 interface ComponentProps {
     member: Member
-    repository: Repository,
+    repository?: Repository,
     projectPath?: string,
     omitDevToMainPushFlow?: boolean,
 }
@@ -789,7 +789,7 @@ export default function ClaudeTestPage({ member, repository, projectPath, omitDe
             {/* Member Info */}
             <p className="text-sm text-muted-foreground">Member: {member.user.full_name || member.user.email}</p>
             {/* Repository Info */}
-            <p className="text-sm text-muted-foreground">Repository: {repository.name}</p>
+            <p className="text-sm text-muted-foreground">Repository: {repository?.name || 'Multiple repositories'}</p>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
