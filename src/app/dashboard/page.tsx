@@ -117,10 +117,8 @@ interface RepositoryAssignment {
   created_at: string
   user: {
     id: string
-    email: string
-    full_name: string | null
-    phone_number: string | null
-    avatar_url: string | null
+    role: string
+    phone: string | null
   }
   assigned_by_user: {
     id: string
@@ -150,7 +148,7 @@ export default function DashboardPage() {
   const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null)
   const [repositoryAssignments, setRepositoryAssignments] = useState<RepositoryAssignment[]>([])
   const [assignmentLoading, setAssignmentLoading] = useState(false)
-  const [assignData, setAssignData] = useState({ user_id: '', role: 'developer' })
+  const [assignData, setAssignData] = useState({ client_id: '', role: 'developer' })
   // Track all repository assignments to show unassigned repos in red
   const [allRepositoryAssignments, setAllRepositoryAssignments] = useState<Map<string, RepositoryAssignment[]>>(new Map())
 
@@ -629,7 +627,7 @@ export default function DashboardPage() {
   }
 
   const handleAssignUser = async () => {
-    if (!selectedRepository || !assignData.user_id) return
+    if (!selectedRepository || !assignData.client_id) return
 
     setAssignmentLoading(true)
     setError('')
@@ -657,7 +655,7 @@ export default function DashboardPage() {
       console.log('✅ Assignment successful, starting repository clone...')
 
       // Find the assigned user's phone number for cloning
-      const assignedUser = clients.find(client => client.client_profile?.auth_user_id === assignData.user_id)
+      const assignedUser = clients.find(client => client.id === assignData.client_id)
       
       if (assignedUser && (assignedUser.phone || assignedUser.client_profile?.phone_number)) {
         try {
@@ -693,7 +691,7 @@ export default function DashboardPage() {
       }
 
       // Reset form and reload assignments
-      setAssignData({ user_id: '', role: 'developer' })
+      setAssignData({ client_id: '', role: 'developer' })
       await loadRepositoryAssignments(selectedRepository.id)
       
       // Refresh the assignment data for all repositories to update the red highlighting
@@ -719,7 +717,7 @@ export default function DashboardPage() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ user_id: userId })
+        body: JSON.stringify({ client_id: userId })
       })
 
       const data = await response.json()
@@ -776,6 +774,9 @@ export default function DashboardPage() {
     label: `@${installation.account_login} (${installation.account_type})`
   }))
 
+  console.log(clients)
+  console.log(repositoryAssignments)
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -822,7 +823,7 @@ export default function DashboardPage() {
                 {currentOrg.role}
               </Badge>
               {(currentOrg.role === ROLES.ORG_ADMIN || currentOrg.role === ROLES.ORG_OWNER) && (
-                <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
+                <Button disabled={true} variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Web Chat
                 </Button>
@@ -1293,18 +1294,18 @@ export default function DashboardPage() {
                   <div className="space-y-2">
                     <Label htmlFor="assign-user">Team Member</Label>
                     <Select
-                      value={assignData.user_id}
-                      onValueChange={(value) => setAssignData(prev => ({ ...prev, user_id: value }))}
+                      value={assignData.client_id}
+                      onValueChange={(value) => setAssignData(prev => ({ ...prev, client_id: value }))}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select member" />
                       </SelectTrigger>
                       <SelectContent>
                         {clients
-                          .filter(client => client.client_profile?.auth_user_id && !repositoryAssignments.some(assignment => assignment.user_id === client.client_profile!.auth_user_id))
+                          .filter(client => client.phone && !repositoryAssignments.some(assignment => assignment.user.phone === client.phone))
                           .map((client) => (
-                          <SelectItem key={client.client_profile!.auth_user_id!} value={client.client_profile!.auth_user_id!}>
-                            {client.client_profile!.full_name || client.client_profile!.email || 'Unknown'}
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.client_profile?.full_name || client.client_profile?.email || client.phone || 'Unknown'}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1329,7 +1330,7 @@ export default function DashboardPage() {
                   <div className="flex items-end">
                     <Button 
                       onClick={handleAssignUser} 
-                      disabled={assignmentLoading || !assignData.user_id}
+                      disabled={assignmentLoading || !assignData.client_id}
                       className="w-full"
                     >
                       {assignmentLoading ? (
@@ -1363,11 +1364,11 @@ export default function DashboardPage() {
                       <div key={assignment.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                            {assignment.user.full_name?.charAt(0) || assignment.user.email.charAt(0)}
+                            H
                           </div>
                           <div>
-                            <p className="font-medium">{assignment.user.full_name || 'Unknown'}</p>
-                            <p className="text-sm text-gray-600">{assignment.user.email}</p>
+                            <p className="font-medium">{assignment.user.phone || 'Unknown'}</p>
+                            <p className="text-sm text-gray-600">{assignment.user.phone}</p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
