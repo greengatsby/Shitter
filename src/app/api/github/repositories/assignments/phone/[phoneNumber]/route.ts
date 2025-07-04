@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/utils/supabase-server'
+import { createServerSupabaseClient } from '@/utils/supabase/server'
 
 // GET /api/github/repositories/assignments/phone/[phoneNumber] - Get repositories assigned to a user by phone number
 export async function GET(

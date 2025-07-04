@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { githubHelpers } from '@/utils/supabase'
-import { createServerSupabaseClient } from '@/utils/supabase-server'
+import { createServerSupabaseClient } from '@/utils/supabase/server'
 
-let CHECK_AUTH = false;
-let HARDCODED_BYPASS = true;
+let CHECK_AUTH = true;
 
 // POST /api/github/repositories/[id]/assignments - Assign user to repository
 export async function POST(
@@ -14,7 +13,7 @@ export async function POST(
     const supabase = createServerSupabaseClient()
     
     const repositoryId = params.id
-    const { client_id, role = 'developer' } = await request.json()
+    const { client_id, role = 'developer', current_auth_user_id } = await request.json()
 
     let userId = ""
 
@@ -29,9 +28,7 @@ export async function POST(
       }
       userId = user.id
     }
-    if (HARDCODED_BYPASS) {
-      userId = "ec3ffef1-847b-4e2f-a964-ea1c4490e277"
-    }
+
     if (!client_id) {
       return NextResponse.json(
         { error: 'Client ID is required' },

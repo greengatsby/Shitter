@@ -9,7 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Eye, EyeOff } from "lucide-react"
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '@/context/useAuth'
+import { createClient } from '@/utils/supabase/client'
+
+const supabase = createClient()
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -19,8 +22,7 @@ function SignInForm() {
   const [message, setMessage] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { signIn, loading } = useAuth()
-
+  const { isLoading, signOut } = useAuth()
   useEffect(() => {
     const errorParam = searchParams.get('error')
     const messageParam = searchParams.get('message')
@@ -37,13 +39,16 @@ function SignInForm() {
     e.preventDefault()
     setError('')
 
-    const result = await signIn(email, password)
+    const {data, error} = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    })
 
-    if (result.success) {
+    if (data.user) {
       // Redirect to dashboard
       router.push('/dashboard')
     } else {
-      setError(result.error || 'Sign in failed')
+      setError(error?.message || 'Sign in failed')
     }
   }
 
@@ -79,7 +84,7 @@ function SignInForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
                 required
-                disabled={loading}
+                disabled={isLoading}
               />
             </div>
 
@@ -93,7 +98,7 @@ function SignInForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
-                  disabled={loading}
+                  disabled={isLoading}
                 />
                 <Button
                   type="button"
@@ -101,7 +106,7 @@ function SignInForm() {
                   size="sm"
                   className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
-                  disabled={loading}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -112,8 +117,8 @@ function SignInForm() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing in...

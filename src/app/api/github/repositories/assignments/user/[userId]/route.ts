@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/utils/supabase-server'
+import { createServerSupabaseClient } from '@/utils/supabase/server'
 
 let CHECK_AUTH = true;
 

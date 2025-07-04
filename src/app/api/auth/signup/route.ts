@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { organizationHelpers } from '@/utils/supabase'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+import { createServerSupabaseClient } from '@/utils/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,21 +44,7 @@ export async function POST(request: NextRequest) {
     const cookiesToSet: Array<{ name: string; value: string; options: any }> = []
 
     // Create server-side Supabase client for auth with proper cookie handling
-    const supabase = createServerClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '', {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          // Store cookie changes for response
-          cookiesToSet.push({ name, value, options })
-        },
-        remove(name: string, options: any) {
-          // Store cookie changes for response
-          cookiesToSet.push({ name, value: '', options })
-        },
-      },
-    })
+    const supabase = createServerSupabaseClient()
 
     // Sign up user with auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -84,16 +66,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create user profile using service role client (bypasses RLS)
-    const supabaseAdmin = createServerClient(supabaseUrl, supabaseServiceKey, {
-      cookies: {
-        get() { return undefined },
-        set() {},
-        remove() {},
-      },
-    })
 
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await supabase
       .from('users')
       .insert({
         id: authData.user.id,
@@ -113,7 +87,7 @@ export async function POST(request: NextRequest) {
     // If organization details provided, create organization
     let organizationData = null
     if (organization_name && organization_slug && authData.user) {
-      const { data: orgData, error: orgError } = await supabaseAdmin.rpc('create_organization_with_owner', {
+      const { data: orgData, error: orgError } = await supabase.rpc('create_organization_with_owner', {
         org_name: organization_name,
         org_slug: organization_slug,
         owner_auth_user_id: authData.user.id

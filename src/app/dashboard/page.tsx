@@ -35,9 +35,11 @@ import {
   LogOut,
   MessageSquare
 } from "lucide-react"
-import { supabase } from '@/utils/supabase'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '@/context/useAuth'
 import { ROLES } from '@/utils/constants'
+import { createClient } from '@/utils/supabase/client'
+
+const supabase = createClient()
 
 interface Organization {
   id: string
@@ -110,7 +112,7 @@ interface Repository {
 
 interface RepositoryAssignment {
   id: string
-  user_id: string
+  client_id: string
   repository_id: string
   role: string
   permissions: string[]
@@ -774,9 +776,6 @@ export default function DashboardPage() {
     label: `@${installation.account_login} (${installation.account_type})`
   }))
 
-  console.log(clients)
-  console.log(repositoryAssignments)
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1376,7 +1375,7 @@ export default function DashboardPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleRemoveAssignment(assignment.user_id)}
+                            onClick={() => handleRemoveAssignment(assignment.client_id)}
                             disabled={assignmentLoading}
                           >
                             <Trash2 className="h-4 w-4" />

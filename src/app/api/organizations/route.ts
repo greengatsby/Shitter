@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { organizationHelpers } from '@/utils/supabase'
-import { createServerSupabaseClient } from '@/utils/supabase-server'
+import { createServerSupabaseClient } from '@/utils/supabase/server'
 
 // GET /api/organizations - Get user's organizations
 export async function GET(request: NextRequest) {

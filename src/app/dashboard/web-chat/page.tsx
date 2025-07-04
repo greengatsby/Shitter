@@ -22,12 +22,12 @@ import {
   Github,
   Settings
 } from "lucide-react"
-import { supabase, githubHelpers } from '@/utils/supabase'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '@/context/useAuth'
 import WebChat from '@/app/dashboard/_components/WebChat'
 import { toast } from 'sonner'
 import { OrgClient, Repository as RepoType } from './_types'
+import { ROLES } from '@/utils/constants'
 
 interface Organization {
   id: string
@@ -79,7 +79,7 @@ export default function WebChatPage() {
   const [repositoriesLoading, setRepositoriesLoading] = useState(false)
   const [membersLoading, setMembersLoading] = useState(false)
   const [projectPath, setProjectPath] = useState<string>('')
-  const {isOrgOwner, isOrgMember, isLoading} = useAuth()
+  const { currentUserData, isLoading} = useAuth()
 
   useEffect(() => {
     const initializePage = async () => {
@@ -149,7 +149,7 @@ export default function WebChatPage() {
         setCurrentOrg(org)
         
         // Check if user is admin or owner
-        const adminRoles = ['admin', 'owner']
+        const adminRoles = [ROLES.ORG_ADMIN, ROLES.ORG_OWNER]
         const userIsAdmin = adminRoles.includes(org.role)
         setIsAdmin(userIsAdmin)
         
@@ -413,7 +413,7 @@ export default function WebChatPage() {
     )
   }
 
-  if (!isAdmin && isOrgMember) {
+  if (!isAdmin && currentUserData?.isOrgMember) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -434,7 +434,7 @@ export default function WebChatPage() {
     )
   }
 
-  if (!isAdmin) {
+  if (!currentUserData?.isOrgAdmin && !currentUserData?.isOrgOwner) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="w-full max-w-md">
