@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseAdminClient } from '@/utils/supabase/admin';
-import { formatTelnyxNumber, sanitizePhoneNumber } from '@/lib/file-system';
+import { sanitizePhoneNumber } from '@/lib/file-system';
 
 interface ClaudeResponse {
   content?: string;
@@ -195,7 +195,8 @@ export async function POST(request: NextRequest) {
     if (data?.event_type === 'message.received') {
       const message = data.payload
       const messageId = message.id
-      const fromNumber = sanitizePhoneNumber(message.from.phone_number)
+      const fromNumberTelnyx = message.from.phone_number
+      const fromNumberSanitizedToDb = sanitizePhoneNumber(message.from.phone_number)
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
       
@@ -225,12 +226,12 @@ export async function POST(request: NextRequest) {
         .from('processed_messages')
         .insert({
           message_id: messageId,
-          phone_number: fromNumber,
+          phone_number: fromNumberSanitizedToDb,
           processed_at: new Date().toISOString()
         })
       
       // Find user by phone number
-      console.log('🔍 Looking up user by phone number:', fromNumber)
+      console.log('🔍 Looking up user by phone number:', fromNumberSanitizedToDb)
 
       let user = null
 
@@ -246,7 +247,7 @@ export async function POST(request: NextRequest) {
           email,
           full_name
         `)
-        .eq('phone', fromNumber)
+        .eq('phone', fromNumberSanitizedToDb)
         // .not('user_id', 'is', null)
         .single()
       
@@ -257,7 +258,7 @@ export async function POST(request: NextRequest) {
         const { data: userData, error: userError } = await supabaseAdmin
           .from('users')
           .select('*')
-          .eq('phone_number', fromNumber)
+          .eq('phone_number', fromNumberSanitizedToDb)
           .single()
         
         if (userData && !userError) {
@@ -267,10 +268,10 @@ export async function POST(request: NextRequest) {
       
       if (!user) {
 
-        if(fromNumber.trim() != process.env.TELNYX_PHONE_NUMBER?.trim()) {
-          console.log('trying send message error:', fromNumber)
+        if(fromNumberTelnyx.trim() != process.env.TELNYX_PHONE_NUMBER?.trim()) {
+          console.log('trying send message error:', fromNumberTelnyx)
           // MAIN PROBLEM CREATING A ENDLESS LOOP. be careful with this.
-          await sendSMS(fromNumber, "Hi! I don't have you in my system yet. Please contact support to get set up.")
+          await sendSMS(fromNumberTelnyx, "Hi! I don't have you in my system yet. Please contact support to get set up.")
         }
 
         console.log('just return')
@@ -290,7 +291,7 @@ export async function POST(request: NextRequest) {
         const { data: membershipData, error: orgError } = await supabaseAdmin
           .from('organization_clients')
           .select('id, organization_id, role')
-          .eq('phone', fromNumber)
+          .eq('phone', fromNumberSanitizedToDb)
           .not('joined_at', 'is', null) // Only get active memberships
           .single()
 
@@ -314,7 +315,8 @@ export async function POST(request: NextRequest) {
 
       const userContext = {
         user,
-        phoneNumber: fromNumber,
+        phoneNumber: fromNumberTelnyx,
+        phoneNumberSanitizedToDb: fromNumberSanitizedToDb,
         organizationId: orgMembership?.organization_id || null,
         organizationName,
         organizationRole: orgMembership?.role || null
@@ -323,7 +325,8 @@ export async function POST(request: NextRequest) {
       console.log('📱 User context:', {
         userId: user.id,
         userName: user.full_name || user.email,
-        phoneNumber: fromNumber,
+        phoneNumber: fromNumberTelnyx,
+        phoneNumberSanitizedToDb: fromNumberSanitizedToDb,
         organizationId: userContext.organizationId,
         organizationName: userContext.organizationName,
         role: userContext.organizationRole
@@ -351,7 +354,7 @@ export async function POST(request: NextRequest) {
         let mediaContext = ''
         
         if (audioMedia.length > 0) {
-          console.log(`Processing ${audioMedia.length} audio recording(s) from ${fromNumber}`)
+          console.log(`Processing ${audioMedia.length} audio recording(s) from ${fromNumberTelnyx}`)
           const transcriptions = await Promise.all(
             audioMedia.map(async (media: any) => {
               try {
@@ -367,7 +370,7 @@ export async function POST(request: NextRequest) {
         }
         
         if (imageMedia.length > 0) {
-          console.log(`Processing ${imageMedia.length} image(s) from ${fromNumber}`)
+          console.log(`Processing ${imageMedia.length} image(s) from ${fromNumberTelnyx}`)
           const imageAnalysis = await analyzeImagesForContext(imageMedia)
           mediaContext += imageAnalysis ? `\n[IMAGE ANALYSIS]: ${imageAnalysis}` : '\n[IMAGE]: Unable to analyze image'
         }
@@ -384,7 +387,7 @@ export async function POST(request: NextRequest) {
       
       // Send response SMS
       if (result.response) {
-        await sendSMS(fromNumber, result.response)
+        await sendSMS(fromNumberTelnyx, result.response)
       }
     }
 
@@ -425,7 +428,7 @@ async function sendSMS(toNumber: string, message: string) {
       body: JSON.stringify({
         // messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID || '400197a4-0dc6-4459-bfb4-b757267e689e',
         from: process.env.TELNYX_PHONE_NUMBER,
-        to: formatTelnyxNumber(toNumber),
+        to: toNumber,
         text: smsMessage
       })
     })
@@ -447,7 +450,7 @@ async function sendSMS(toNumber: string, message: string) {
           },
           body: JSON.stringify({
             from: process.env.TELNYX_PHONE_NUMBER,
-            to: formatTelnyxNumber(toNumber),
+            to: toNumber,
             text: shortMessage
           })
         })

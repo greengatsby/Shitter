@@ -85,11 +85,9 @@ export function formatTelnyxNumber(raw: string) {
  * Removes or replaces characters that might cause issues in file paths
  */
 export function sanitizePhoneNumber(phoneNumber: string): string {
-
-  const formattedPhone = formatTelnyxNumber(phoneNumber)
   // Remove all non-alphanumeric characters and replace with underscores
   // Keep only digits, letters, and convert spaces/special chars to underscores
-  return formattedPhone
+  return phoneNumber
     .replace(/[^\w\d]/g, '_')  // Replace non-word chars with underscore
     .replace(/_+/g, '_')       // Replace multiple underscores with single
     .replace(/^_|_$/g, '');    // Remove leading/trailing underscores
