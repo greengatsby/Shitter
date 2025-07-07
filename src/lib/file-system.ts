@@ -75,7 +75,7 @@ async function ensureOrganizationDirectory(organizationId: string): Promise<stri
  * Sanitizes a phone number to be safe for use as a directory name
  * Removes or replaces characters that might cause issues in file paths
  */
-function sanitizePhoneNumber(phoneNumber: string): string {
+export function sanitizePhoneNumber(phoneNumber: string): string {
   // Remove all non-alphanumeric characters and replace with underscores
   // Keep only digits, letters, and convert spaces/special chars to underscores
   return phoneNumber

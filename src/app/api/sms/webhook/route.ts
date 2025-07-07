@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseAdminClient } from '@/utils/supabase/admin';
+import { sanitizePhoneNumber } from '@/lib/file-system';
 
 interface ClaudeResponse {
   content?: string;
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
     if (data?.event_type === 'message.received') {
       const message = data.payload
       const messageId = message.id
-      const fromNumber = message.from.phone_number
+      const fromNumber = sanitizePhoneNumber(message.from.phone_number)
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
       

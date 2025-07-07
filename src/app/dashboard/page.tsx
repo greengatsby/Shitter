@@ -38,6 +38,7 @@ import {
 import { useAuth } from '@/context/useAuth'
 import { ROLES } from '@/utils/constants'
 import { createClient } from '@/utils/supabase/client'
+import { sanitizePhoneNumber } from '@/lib/file-system'
 
 const supabase = createClient()
 
@@ -399,7 +400,10 @@ export default function DashboardPage() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(inviteData)
+        body: JSON.stringify({
+          ...inviteData,
+          phone_number: sanitizePhoneNumber(inviteData.phone_number)
+        })
       })
 
       const data = await response.json()
