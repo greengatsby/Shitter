@@ -13,16 +13,21 @@ import { createClient } from "@/utils/supabase/client";
 import { AuthContextType } from "./types";
 import { DatabaseError } from "@/utils/errors";
 import { ROLES } from "@/utils/constants";
+import { generalHelpers } from "@/utils/fetchers/general";
 
 // If AuthContextType is not in ../types/auth, or doesn't include fullName, define/update it here.
 // For this example, I'll assume it needs fullName:
 interface ExtendedAuthContextType extends AuthContextType {
   fullName: string | null;
-  currentUserData: {
-    isOrgOwner: boolean;
-    isOrgMember: boolean;
-    isOrgAdmin: boolean;
-  }
+  currentUserData: CurrentUserData;
+}
+
+interface CurrentUserData {
+  isOrgOwner: boolean;
+  isOrgMember: boolean;
+  isOrgAdmin: boolean;
+  phoneNumber: string | null;
+  organizationId: string | null;
 }
 
 // Create context with default values - uses the imported AuthContextType
@@ -37,6 +42,8 @@ const AuthContext = createContext<ExtendedAuthContextType>({
     isOrgOwner: false,
     isOrgMember: false,
     isOrgAdmin: false,
+    phoneNumber: null,
+    organizationId: null,
   },
   fullName: null,
 });
@@ -52,12 +59,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<DatabaseError | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const initialLoadComplete = useRef(false);
-  const [currentUserData, setCurrentUserData] = useState<any | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<CurrentUserData>({
+    isOrgOwner: false,
+    isOrgMember: false,
+    isOrgAdmin: false,
+    phoneNumber: null,
+    organizationId: null,
+  });
 
   // Create the client once per hook instance
   const supabase = useRef(createClient()).current;
 
   const fetchUserProfile = async (userId: string): Promise<boolean> => {
+
+    console.log('fetchUserProfile', userId)
     try {
       const { data, error: fetchError } = await supabase
         .from("users")
@@ -72,6 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
+      const { data: currentUserData, error: currentUserDataError } = await generalHelpers.getCurrentUserPhoneAndOrganizationId();
+
       console.log({data})
 
       const newProfileComplete = !!data?.profile_complete && !!data?.full_name;
@@ -85,6 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isOrgOwner: data?.role === ROLES.ORG_OWNER,
         isOrgAdmin: data?.role === ROLES.ORG_ADMIN,
         isOrgMember: data?.role === ROLES.ORG_MEMBER,
+        phoneNumber: currentUserData?.phoneNumber,
+        organizationId: currentUserData?.organizationId,
       });
 
       return true;

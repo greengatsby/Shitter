@@ -66,11 +66,12 @@ interface Repository {
 export default function WebChatPage() {
   const router = useRouter()
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
-  const [members, setMembers] = useState<OrgClient[]>([])
+  const [clientsState, setActiveClientsState] = useState<OrgClient[]>([])
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [selectedMember, setSelectedMember] = useState<string>('')
   const [selectedRepository, setSelectedRepository] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [error, setError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [showWebChat, setShowWebChat] = useState(false)
@@ -79,38 +80,60 @@ export default function WebChatPage() {
   const [repositoriesLoading, setRepositoriesLoading] = useState(false)
   const [membersLoading, setMembersLoading] = useState(false)
   const [projectPath, setProjectPath] = useState<string>('')
-  const { currentUserData, isLoading} = useAuth()
+  const { currentUserData, isLoading, organizationId } = useAuth()
 
   useEffect(() => {
     const initializePage = async () => {
       try {
         setLoading(true)
+        setInitialLoadComplete(false)
 
-        // console.log('user', user, 'session', session)
-        // if ( !isLoading && (!user || !session) ) {
-        //   router.push('/auth/signin')
-        //   return
-        // }
+        // Wait for auth to load
+        if (isLoading) return
 
-        // Load organizations to get current org and user role
-        await loadOrganizations()
+        // Use auth organization data instead of API call
+        if (organizationId && currentUserData) {
+          // Create currentOrg from auth data
+          const org = {
+            id: organizationId,
+            organization: {
+              id: organizationId,
+              name: 'Organization', // We can fetch this later if needed
+              slug: 'org',
+              description: null,
+              created_at: new Date().toISOString()
+            },
+            role: currentUserData.isOrgOwner ? 'owner' : 
+                  currentUserData.isOrgAdmin ? 'admin' : 'member',
+            joined_at: new Date().toISOString()
+          }
+          
+          setCurrentOrg(org)
+          
+          // Check if user is admin or owner
+          const userIsAdmin = currentUserData.isOrgOwner || currentUserData.isOrgAdmin
+          setIsAdmin(userIsAdmin)
+          
+          console.log(`🎯 Set current org from auth: ${organizationId}, role: ${org.role}, isAdmin: ${userIsAdmin}`)
+          
+          // If user is admin, load members as part of initialization
+          if (userIsAdmin) {
+            await loadMembersForInitialization(org)
+          }
+        }
+        setLoading(false)
         
       } catch (err) {
         console.error('❌ Page initialization error:', err)
         setError(err instanceof Error ? err.message : 'Failed to initialize page')
       } finally {
-        setLoading(false)
+        console.log("finally")
+        setInitialLoadComplete(true)
       }
     }
 
     initializePage()
-  }, [router])
-
-  useEffect(() => {
-    if (currentOrg && isAdmin) {
-      loadMembers()
-    }
-  }, [currentOrg, isAdmin])
+  }, [isLoading, organizationId, currentUserData])
 
   useEffect(() => {
     if (selectedMember) {
@@ -122,52 +145,38 @@ export default function WebChatPage() {
     setSelectedRepository('')
   }, [selectedMember])
 
-  const loadOrganizations = async () => {
+  const loadMembersForInitialization = async (org: Organization) => {
     try {
-      console.log('📋 Loading organizations...')
-      const response = await fetch('/api/organizations')
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load organizations')
-      }
-
-      const orgs = data.organizations.map((item: any) => ({
-        id: item.organization.id,
-        organization: {
-          id: item.organization.id,
-          name: item.organization.name,
-          slug: item.organization.slug,
-          description: item.organization.description,
-          created_at: item.organization.created_at
-        },
-        role: item.role
-      }))
+      setMembersLoading(true)
+      setError('')
+      console.log(`👥 Loading members for organization: ${org.organization.id}`)
+      const response = await fetch(`/api/organizations/${org.organization.id}/members`)
       
-      if (orgs && orgs.length > 0) {
-        const org = orgs[0]
-        setCurrentOrg(org)
-        
-        // Check if user is admin or owner
-        const adminRoles = [ROLES.ORG_ADMIN, ROLES.ORG_OWNER]
-        const userIsAdmin = adminRoles.includes(org.role)
-        setIsAdmin(userIsAdmin)
-        
-        console.log(`🎯 Set current org to: ${org.organization.name}, role: ${org.role}, isAdmin: ${userIsAdmin}`)
+      if (!response.ok) {
+        throw new Error('Failed to load members')
       }
+
+      const data = await response.json()
+      console.log('data', data)
+      const activeClients = (data.clients || []).filter((client: OrgClient) => client.phone) // Only show active members
+      setActiveClientsState(activeClients)
+      console.log(`✅ Loaded ${activeClients.length} active clients`)
+      
     } catch (err) {
-      console.error('❌ Error loading organizations:', err)
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      console.error('❌ Error loading members:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load clients')
+    } finally {
+      setMembersLoading(false)
     }
   }
 
   const loadMembers = async () => {
-    if (!currentOrg) return
+    if (!currentOrg || membersLoading) return // Prevent double calls
 
     try {
       setMembersLoading(true)
       setError('')
-      console.log(`👥 Loading members for organization: ${currentOrg.organization.name}`)
+      console.log(`👥 Loading members for organization: ${currentOrg.organization.id}`)
       const response = await fetch(`/api/organizations/${currentOrg.organization.id}/members`)
       
       if (!response.ok) {
@@ -175,9 +184,10 @@ export default function WebChatPage() {
       }
 
       const data = await response.json()
-      const activeMembers = (data.clients || []).filter((member: OrgClient) => member.joined_at) // Only show active members
-      setMembers(activeMembers)
-      console.log(`✅ Loaded ${activeMembers.length} active clients`)
+      console.log('data', data)
+      const activeClients = (data.clients || []).filter((client: OrgClient) => client.phone) // Only show active members
+      setActiveClientsState(activeClients)
+      console.log(`✅ Loaded ${activeClients.length} active clients`)
       
     } catch (err) {
       console.error('❌ Error loading members:', err)
@@ -188,14 +198,14 @@ export default function WebChatPage() {
   }
 
   const loadRepositoriesForMember = async (memberId: string) => {
-    if (!currentOrg) return
+    if (!currentOrg || repositoriesLoading) return // Prevent double calls
 
     try {
       setRepositoriesLoading(true)
       setError('')
       
       // Find the member to get their phone number
-      const member = members.find(m => m.id === memberId)
+      const member = clientsState.find(m => m.id === memberId)
       if (!member) {
         throw new Error('Member not found')
       }
@@ -260,7 +270,7 @@ export default function WebChatPage() {
       return
     }
     
-    const member = members.find(m => m.id === selectedMember)
+    const member = clientsState.find(m => m.id === selectedMember)
     
     if (!member || !currentOrg) {
       setError('Unable to find selected member or organization.')
@@ -385,10 +395,18 @@ export default function WebChatPage() {
     }
   }
 
-  if (loading) {
+  // Show loading spinner for all initial operations
+  if (loading || !initialLoadComplete) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">
+            {isLoading ? 'Loading authentication...' : 
+             membersLoading ? 'Loading team members...' : 
+             'Initializing workspace...'}
+          </p>
+        </div>
       </div>
     )
   }
@@ -457,7 +475,7 @@ export default function WebChatPage() {
 
   // Show WebChat component when both member and repository are selected
   if (showWebChat) {
-    const selectedMemberData = members.find(m => m.id === selectedMember)
+    const selectedMemberData = clientsState.find(m => m.id === selectedMember)
     const selectedRepositoryData = repositories.find(r => r.id === selectedRepository)
     
     return (
@@ -560,10 +578,10 @@ export default function WebChatPage() {
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
                   <p className="text-gray-600">Loading clients...</p>
                 </div>
-              ) : members.length > 0 ? (
+              ) : clientsState.length > 0 ? (
                 <RadioGroup value={selectedMember} onValueChange={setSelectedMember}>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {members.map((member) => (
+                    {clientsState.map((member) => (
                       <div key={member.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
                         <RadioGroupItem value={member.id} id={member.id} />
                         <Label htmlFor={member.id} className="flex-1 cursor-pointer">
@@ -639,7 +657,7 @@ export default function WebChatPage() {
                     <div className="flex items-center gap-2 text-sm text-blue-800">
                       <User className="h-4 w-4" />
                       <span className="font-medium">
-                        Showing repositories for: {members.find(m => m.id === selectedMember)?.client_profile?.full_name || members.find(m => m.id === selectedMember)?.client_profile?.email}
+                        Showing repositories for: {clientsState.find(m => m.id === selectedMember)?.client_profile?.full_name || clientsState.find(m => m.id === selectedMember)?.client_profile?.email}
                       </span>
                     </div>
                   </div>
@@ -769,7 +787,7 @@ export default function WebChatPage() {
               {cloningInProgress && (
                 <p className="text-center text-sm text-blue-600">
                   Setting up workspace with structure: {currentOrg?.organization.id}/{(() => {
-                    const selectedMemberData = members.find(m => m.id === selectedMember)
+                    const selectedMemberData = clientsState.find(m => m.id === selectedMember)
                     return selectedMemberData?.phone || selectedMemberData?.client_profile?.phone_number || 'unknown'
                   })()}{selectedRepository ? `/${repositories.find(r => r.id === selectedRepository)?.name}` : ` (${repositories.length} repositories)`}
                 </p>
@@ -792,7 +810,7 @@ export default function WebChatPage() {
                 <strong>Your Role:</strong> {currentOrg.role}
               </div>
               <div>
-                <strong>Active Clients:</strong> {members.length}
+                <strong>Active Clients:</strong> {clientsState.length}
               </div>
               <div>
                 <strong>Repositories:</strong> {repositories.length}

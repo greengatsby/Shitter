@@ -129,7 +129,27 @@ export const organizationHelpers = {
     return { data, error };
   },
 
-  async getUserOrganizations(supabaseClient?: any) {
+  // helper
+  async getUserOrganizationId(supabaseClient?: any) {
+    const client = supabaseClient || supabase;
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return { data: null, error: new Error('User not authenticated') };
+
+    const isAdminOrOwner = true;
+
+    const table = isAdminOrOwner ? 'users' : 'organization_clients';
+    const userIdColumn = isAdminOrOwner ? 'id' : 'client_id';
+
+    const { data, error } = await client
+      .from(table)
+      .select('organization_id')
+      .eq(userIdColumn, user.id)
+      .single();
+
+    return { data, error };
+  },
+
+  async getUserOrganization(supabaseClient?: any) {
     const client = supabaseClient || supabase;
     const { data: { user } } = await client.auth.getUser();
     if (!user) return { data: null, error: new Error('User not authenticated') };

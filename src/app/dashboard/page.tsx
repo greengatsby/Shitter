@@ -822,7 +822,7 @@ export default function DashboardPage() {
                 {currentOrg.role}
               </Badge>
               {(currentOrg.role === ROLES.ORG_ADMIN || currentOrg.role === ROLES.ORG_OWNER) && (
-                <Button disabled={true} variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
+                <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
                   <MessageSquare className="h-4 w-4 mr-2" />
                   Web Chat
                 </Button>

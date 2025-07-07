@@ -9,6 +9,8 @@ export async function GET(
   try {
     const supabase = createServerSupabaseClient()
 
+    console.log('params', params)
+
     const phoneNumber = decodeURIComponent(params.phoneNumber)
 
     console.log(`🔍 Fetching repository assignments for phone number: ${phoneNumber}`)
@@ -23,31 +25,25 @@ export async function GET(
       .from('organization_clients')
       .select(`
         phone,
-        client_profile:organization_clients_profile(
-          auth_user_id,
-          email,
-          full_name,
-          phone_number
-        )
+        role,
+        id
       `)
       .eq('phone', phoneNumber)
-      .not('org_client_id', 'is', null)
+      // .not('org_client_id', 'is', null)
       .single()
 
-    if (clientData?.client_profile) {
+    if (clientData) {
       // Handle both array and single object responses
-      const profile = Array.isArray(clientData.client_profile) 
-        ? clientData.client_profile[0] 
-        : clientData.client_profile as any
 
-      if (profile?.auth_user_id) {
+      if (clientData?.phone) {
         userData = {
-          id: profile.auth_user_id,
-          email: profile.email,
-          full_name: profile.full_name,
-          phone_number: phoneNumber
+          phone: clientData.phone,
+          role: clientData.role,
+          id: clientData.id
         }
       }
+
+      console.log('clientData', clientData)
     }
 
     if (!userData) {
@@ -100,7 +96,7 @@ export async function GET(
           )
         )
       `)
-      .eq('user_id', userData.id)
+      .eq('client_id', userData.id)
 
     if (error) {
       console.error('Error fetching repository assignments:', error)
