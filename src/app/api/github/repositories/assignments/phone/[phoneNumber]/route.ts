@@ -47,37 +47,17 @@ export async function GET(
     }
 
     if (!userData) {
-      // If not found by direct phone, try by client_profile phone_number
-      const { data: profileData, error: profileError } = await supabase
-        .from('organization_clients_profile')
-        .select('auth_user_id, email, full_name, phone_number')
-        .eq('phone_number', phoneNumber)
-        .single()
-
-      if (profileData?.auth_user_id) {
-        userData = {
-          id: profileData.auth_user_id,
-          email: profileData.email,
-          full_name: profileData.full_name,
-          phone_number: phoneNumber
-        }
-      } else {
-        userError = profileError || new Error('User not found')
-      }
-    }
-
-    if (userError || !userData) {
       console.error('Error finding user by phone number:', userError)
       return NextResponse.json(
         { 
           error: 'User not found with this phone number',
-          details: userError?.message
+          details: userError
         },
         { status: 404 }
       )
     }
 
-    console.log(`📱 Found user: ${userData.full_name || userData.email} (ID: ${userData.id})`)
+    console.log(`📱 Found user: ${userData.phone} (ID: ${userData.id})`)
 
     // Get repositories assigned to the user
     const { data: assignments, error } = await supabase

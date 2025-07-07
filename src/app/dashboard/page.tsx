@@ -56,6 +56,7 @@ interface Organization {
 
 interface Client {
   id: string
+  alias: string | null
   role: string
   phone: string | null
   joined_at: string | null
@@ -68,7 +69,7 @@ interface Client {
     full_name: string | null
     phone_number: string | null
     avatar_url: string | null
-    auth_user_id: string | null
+    user_id: string | null
   } | null
   invited_by_profile: {
     id: string
@@ -139,7 +140,7 @@ export default function DashboardPage() {
   const [dataLoading, setDataLoading] = useState(false) // Separate loading state for organization data
   const [error, setError] = useState('')
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
-  const [inviteData, setInviteData] = useState({ phone_number: '', role: 'member' })
+  const [inviteData, setInviteData] = useState({ phone_number: '', role: 'admin', alias: '' })
   const [inviteLoading, setInviteLoading] = useState(false)
   const [githubConnecting, setGithubConnecting] = useState(false)
   const [syncingRepositories, setSyncingRepositories] = useState(false)
@@ -408,7 +409,7 @@ export default function DashboardPage() {
       }
 
       setInviteDialogOpen(false)
-      setInviteData({ phone_number: '', role: 'member' })
+      setInviteData({ phone_number: '', role: 'member', alias: '' })
       refreshOrganizationData() // Refresh members list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -936,6 +937,18 @@ export default function DashboardPage() {
                           />
                         </div>
                         <div className="space-y-2">
+                          <Label htmlFor="alias">Alias (Optional)</Label>
+                          <Input
+                            id="alias"
+                            placeholder="e.g., John Doe, Metal Blog App"
+                            value={inviteData.alias}
+                            onChange={(e) => setInviteData(prev => ({ ...prev, alias: e.target.value }))}
+                          />
+                          <p className="text-xs text-gray-500">
+                            A display name to help you identify this person before they accept the invitation
+                          </p>
+                        </div>
+                        <div className="space-y-2">
                           <Label htmlFor="role">Role</Label>
                           <Select
                             value={inviteData.role}
@@ -979,7 +992,7 @@ export default function DashboardPage() {
                           {client.client_profile?.full_name?.charAt(0) || client.client_profile?.email?.charAt(0) || client.phone?.charAt(0) || '?'}
                         </div>
                         <div>
-                          <p className="font-medium">{client.client_profile?.full_name || 'Unknown'}</p>
+                          <p className="font-medium">(alias) {client.alias || 'Unknown'}</p>
                           <p className="text-sm text-gray-600">{client.client_profile?.email || 'No email'}</p>
                           {(client.phone || client.client_profile?.phone_number) && (
                             <p className="text-sm text-gray-500 flex items-center">

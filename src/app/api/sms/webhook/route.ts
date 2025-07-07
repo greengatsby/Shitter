@@ -240,8 +240,10 @@ export async function POST(request: NextRequest) {
       
       // Find user by phone number
       console.log('🔍 Looking up user by phone number:', fromNumber)
-      
-      // Try to find user by phone in organization_clients first
+
+      let user = null
+
+      // First try to find user by phone in organization_clients
       let { data: clientData, error: clientError } = await supabaseAdmin
         .from('organization_clients')
         .select(`
@@ -249,66 +251,29 @@ export async function POST(request: NextRequest) {
           phone,
           organization_id,
           role,
-          client_profile:organization_clients_profile(
-            auth_user_id,
-            email,
-            full_name,
-            phone_number
-          )
+          user_id,
+          email,
+          full_name
         `)
         .eq('phone', fromNumber)
-        .not('org_client_id', 'is', null)
+        // .not('user_id', 'is', null)
         .single()
-
-      let user = null
       
-      if (clientData?.client_profile) {
-        // Handle both array and single object responses
-        const profile = Array.isArray(clientData.client_profile) 
-          ? clientData.client_profile[0] 
-          : clientData.client_profile as any
-
-        if (profile?.auth_user_id) {
-          // Get full user data
-          const { data: userData, error: userError } = await supabaseAdmin
-            .from('users')
-            .select('*')
-            .eq('id', profile.auth_user_id)
-            .single()
-          
-          if (userData && !userError) {
-            user = userData
-          }
-        }
-      }
-
-      // If not found by organization_clients phone, try by client_profile phone_number
-      if (!user) {
-        const { data: profileData, error: profileError } = await supabaseAdmin
-          .from('organization_clients_profile')
-          .select(`
-            auth_user_id,
-            email,
-            full_name,
-            phone_number
-          `)
+      if (clientData?.id) {
+        user = clientData
+      } else {
+        // If not found in organization_clients, try users table
+        const { data: userData, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('*')
           .eq('phone_number', fromNumber)
           .single()
-
-        if (profileData?.auth_user_id) {
-          // Get full user data
-          const { data: userData, error: userError } = await supabaseAdmin
-            .from('users')
-            .select('*')
-            .eq('id', profileData.auth_user_id)
-            .single()
-          
-          if (userData && !userError) {
-            user = userData
-          }
+        
+        if (userData && !userError) {
+          user = userData
         }
       }
-
+      
       if (!user) {
 
         if(fromNumber.trim() != process.env.TELNYX_PHONE_NUMBER?.trim()) {
@@ -323,10 +288,10 @@ export async function POST(request: NextRequest) {
       }
 
       // Get user's organization membership - we may have already found this in clientData
-      let orgMembership = clientData && clientData.organization_id ? {
-        id: clientData.id,
-        organization_id: clientData.organization_id,
-        role: clientData.role
+      let orgMembership = user && user.organization_id ? {
+        id: user.id,
+        organization_id: user.organization_id,
+        role: user.role
       } : null
 
       // If we didn't get org info from clientData, try to find it another way

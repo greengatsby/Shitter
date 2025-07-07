@@ -11,7 +11,7 @@ export interface OrgClient {
       full_name: string | null
       phone_number: string | null
       avatar_url: string | null
-      auth_user_id: string
+      user_id: string
     }
     invited_by_profile?: {
       id: string

@@ -186,15 +186,11 @@ export const organizationHelpers = {
         phone,
         joined_at,
         invited_at,
-        org_client_id,
-        client_profile:organization_clients_profile(
-          id,
-          email,
-          full_name,
-          phone_number,
-          avatar_url,
-          auth_user_id
-        )
+        user_id,
+        email,
+        full_name,
+        phone_number,
+        avatar_url
       `)
       .eq('organization_id', organizationId)
       .order('joined_at', { ascending: false });
@@ -247,7 +243,19 @@ export const organizationHelpers = {
    * This creates a record in organization_clients with the phone number
    * The org_client_id will be null until they sign up
    */
-  async handleAddClientToOrg(organizationId: string, phoneNumber: string, role: 'member' | 'admin' = 'member', supabaseClient?: any) {
+  async handleAddClientToOrg({
+    organizationId,
+    phoneNumber,
+    role = 'member',
+    supabaseClient = supabase,
+    alias = "default"
+  }: {
+    organizationId: string;
+    phoneNumber: string;
+    role?: 'member' | 'admin';
+    supabaseClient?: any;
+    alias?: string;
+  }) {
     const client = supabaseClient || supabase;
     const { data: { user } } = await client.auth.getUser();
     if (!user) throw new Error('User not authenticated');
@@ -293,7 +301,9 @@ export const organizationHelpers = {
           role: role,
           invited_by: user.id, // Store the inviter's user ID
           invited_at: new Date().toISOString(),
-          org_client_id: null // Will be set when they sign up
+          status: 'pending',
+          user_id: null, // Will be set when they sign up
+          alias: alias
         })
         .select(`
           id,
@@ -330,15 +340,17 @@ export const organizationHelpers = {
         joined_at,
         invited_at,
         created_at,
-        org_client_id,
-              client_profile:organization_clients_profile(
-        id,
+        user_id,
         email,
         full_name,
         phone_number,
         avatar_url,
-        auth_user_id
-      )
+        company_name,
+        position,
+        notes,
+        alias,
+        status,
+        metadata
       `)
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false });
@@ -425,17 +437,6 @@ export const organizationHelpers = {
     const { data: { user } } = await client.auth.getUser();
     if (!user) return { data: null, error: new Error('User not authenticated') };
 
-    // First get the user's client profile
-    const { data: clientProfile, error: profileError } = await client
-      .from('organization_clients_profile')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (profileError) {
-      return { data: [], error: null }; // User has no client profile yet
-    }
-
     const { data, error } = await client
       .from('organization_clients')
       .select(`
@@ -451,7 +452,7 @@ export const organizationHelpers = {
           created_at
         )
       `)
-      .eq('org_client_id', clientProfile.id);
+      .eq('user_id', user.id);
 
     return { data, error };
   },

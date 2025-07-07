@@ -51,7 +51,7 @@ export async function POST(
 ) {
   try {
     const organizationId = params.id;
-    const { phone_number, role = 'member' } = await request.json();
+    const { phone_number, role = 'member', alias = '' } = await request.json();
 
     if (!phone_number) {
       return NextResponse.json(
@@ -88,10 +88,13 @@ export async function POST(
     }
 
     const { data, error } = await organizationHelpers.handleAddClientToOrg(
-      organizationId,
-      phone_number,
-      role,
-      supabase
+      {
+        organizationId,
+        phoneNumber: phone_number,
+        role,
+        supabaseClient: supabase,
+        alias: alias || "default"
+      }
     );
 
     if (error) {
