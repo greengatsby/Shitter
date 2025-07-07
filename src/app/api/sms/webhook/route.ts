@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseAdminClient } from '@/utils/supabase/admin';
-import { sanitizePhoneNumber } from '@/lib/file-system';
+import { formatTelnyxNumber, sanitizePhoneNumber } from '@/lib/file-system';
 
 interface ClaudeResponse {
   content?: string;
@@ -425,7 +425,7 @@ async function sendSMS(toNumber: string, message: string) {
       body: JSON.stringify({
         // messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID || '400197a4-0dc6-4459-bfb4-b757267e689e',
         from: process.env.TELNYX_PHONE_NUMBER,
-        to: toNumber,
+        to: formatTelnyxNumber(toNumber),
         text: smsMessage
       })
     })
@@ -447,7 +447,7 @@ async function sendSMS(toNumber: string, message: string) {
           },
           body: JSON.stringify({
             from: process.env.TELNYX_PHONE_NUMBER,
-            to: toNumber,
+            to: formatTelnyxNumber(toNumber),
             text: shortMessage
           })
         })
