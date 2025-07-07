@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createServerSupabaseAdminClient } from '@/utils/supabase/admin'
 
 // Initialize Supabase admin client
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
 
 export async function POST(request: NextRequest) {
+  const supabaseAdmin = createServerSupabaseAdminClient()
   try {
     const body = await request.json()
     console.log('Telnyx SMS test webhook received:', JSON.stringify(body, null, 2))
@@ -96,6 +87,8 @@ export async function POST(request: NextRequest) {
 
 // Handle GET requests for webhook validation/testing and fetching received messages
 export async function GET(request: NextRequest) {
+  const supabaseAdmin = createServerSupabaseAdminClient()
+
   const url = new URL(request.url)
   const challenge = url.searchParams.get('challenge')
   
