@@ -22,7 +22,7 @@ function SignInForm() {
   const [message, setMessage] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isLoading, signOut } = useAuth()
+  const { isLoading, signOut, user } = useAuth()
   useEffect(() => {
     const errorParam = searchParams.get('error')
     const messageParam = searchParams.get('message')
@@ -34,6 +34,12 @@ function SignInForm() {
       setMessage(decodeURIComponent(messageParam))
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (user && user.id) {
+      router.push('/dashboard')
+    }
+  }, [user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
