@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 // import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/useAuth";
+import RedirectHandler from "@/components/RedirectHandler";
+import { Suspense } from "react";
 
 // const inter = Inter({
 //   variable: "--font-sans",
@@ -29,7 +31,11 @@ export default function RootLayout({
         className={`antialiased`}
       >
         <AuthProvider>
-          {children}
+          <Suspense fallback={<div></div>}>
+            <RedirectHandler>
+              {children}
+            </RedirectHandler>
+          </Suspense>
         </AuthProvider>
       </body>
     </html>

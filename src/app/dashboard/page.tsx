@@ -800,8 +800,12 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Sign in or sign up */}
+            <Button className="w-full" onClick={() => window.location.href = '/auth/signin'}>
+              Sign In
+            </Button>
             <Button className="w-full" onClick={() => window.location.href = '/auth/signup'}>
-              Create Organization
+              Sign Up
             </Button>
           </CardContent>
         </Card>
