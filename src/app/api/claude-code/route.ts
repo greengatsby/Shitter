@@ -19,6 +19,9 @@ interface StreamRequest {
   projectPath?: string;
   omitDevToMainPushFlow?: boolean;
   requestSource?: 'sms' | 'web-chat';
+  userContext?: {
+    isOrgAdminOrOwner: boolean;
+  };
 }
 
 interface StreamResponse {
@@ -181,6 +184,9 @@ export async function POST(request: NextRequest) {
 // Main streaming handler
 async function handleStreamRequest(streamRequest: StreamRequest): Promise<Response> {
   const sessionId = streamRequest.session_id;
+  
+  // check if the user that is sending the sms, is an org admin or owner. in other words, if the phone that is sending the sms, is the same as the phone number of the org admin or owner
+  const isUserOrgAdminOrOwner = streamRequest.userContext?.isOrgAdminOrOwner || false;
 
   if(streamRequest.requestSource === 'sms') {
     console.log('DEBUG: SMS request source detected');

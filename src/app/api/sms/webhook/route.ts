@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseAdminClient } from '@/utils/supabase/admin';
 import { sanitizePhoneNumberClient } from '@/lib/utils';
+import { ROLES } from '@/utils/constants';
 
 interface ClaudeResponse {
   content?: string;
@@ -15,6 +16,7 @@ interface UserContext {
   organizationId: string | null;
   organizationName: string | null;
   organizationRole: string | null;
+  isOrgAdminOrOwner: boolean;
 }
 
 async function sendToClaudeCode(prompt: string, userContext?: UserContext): Promise<ClaudeResponse> {
@@ -24,7 +26,8 @@ async function sendToClaudeCode(prompt: string, userContext?: UserContext): Prom
       phoneNumber: userContext?.phoneNumber,
       organizationId: userContext?.organizationId,
       organizationName: userContext?.organizationName,
-      role: userContext?.organizationRole
+      role: userContext?.organizationRole,
+      isOrgAdminOrOwner: userContext?.isOrgAdminOrOwner
     })
 
     if(!userContext || !userContext.organizationName || !userContext.phoneNumber) {
@@ -33,7 +36,8 @@ async function sendToClaudeCode(prompt: string, userContext?: UserContext): Prom
 
     const sendTo = `${process.env.NEXTJS_APP_BASE_URL || 'http://localhost:3000'}/api/claude-code`
 
-    console.log('DEBUG: Sending to', sendTo)
+    // if the user is an org admin or owner, we don't need the phone number in the project path
+    const projectPath = userContext.isOrgAdminOrOwner ? `${userContext?.organizationId}` : `${userContext?.organizationId}/${userContext?.phoneNumber}`
 
     const response = await fetch(sendTo, {
       method: 'POST',
@@ -46,7 +50,7 @@ async function sendToClaudeCode(prompt: string, userContext?: UserContext): Prom
         maxTurns: 50,
         continue_conversation: true, // Enable session continuation for SMS
         verbose: false,
-        projectPath: `${userContext?.organizationId}/${userContext?.phoneNumber}`,
+        projectPath: projectPath,
         requestSource: 'sms',
         // User context for SMS requests
         userContext: userContext ? {
@@ -55,7 +59,8 @@ async function sendToClaudeCode(prompt: string, userContext?: UserContext): Prom
           organizationId: userContext.organizationId,
           organizationName: userContext.organizationName,
           role: userContext.organizationRole,
-          requestSource: 'sms'
+          requestSource: 'sms',
+          isOrgAdminOrOwner: userContext.isOrgAdminOrOwner
         } : null
       }),
     });
@@ -199,6 +204,8 @@ export async function POST(request: NextRequest) {
       const fromNumberSanitizedToDb = sanitizePhoneNumberClient(message.from.phone_number)
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
+
+      let isOrgAdminOrOwner = false
       
       // console.log(`Message received from ${fromNumber}:`, {
       //   messageId,
@@ -263,6 +270,7 @@ export async function POST(request: NextRequest) {
         
         if (userData && !userError) {
           user = userData
+          isOrgAdminOrOwner = userData.role === ROLES.ORG_ADMIN || userData.role === ROLES.ORG_OWNER
         }
       }
       
@@ -319,7 +327,8 @@ export async function POST(request: NextRequest) {
         phoneNumberSanitizedToDb: fromNumberSanitizedToDb,
         organizationId: orgMembership?.organization_id || null,
         organizationName,
-        organizationRole: orgMembership?.role || null
+        organizationRole: orgMembership?.role || null,
+        isOrgAdminOrOwner
       }
 
       console.log('📱 User context:', {
