@@ -10,9 +10,12 @@ export async function GET(request: NextRequest) {
   // Helper function to create redirect URLs with correct protocol
   const createRedirectURL = (path: string) => {
     const baseUrl = process.env.NODE_ENV === 'development' 
-      ? 'http://localhost:3000' 
+      ? process.env.NEXTJS_APP_BASE_URL || 'http://localhost:3006' 
       : request.url.split('/api/')[0]; // Use the same origin as the request
-    return new URL(path, baseUrl);
+
+    const wholeUrl = new URL(path, baseUrl);  
+    console.log('Redirecting to:', wholeUrl.toString());
+    return wholeUrl;
   }
   
   try {
