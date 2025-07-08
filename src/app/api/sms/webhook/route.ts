@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseAdminClient } from '@/utils/supabase/admin';
-import { sanitizePhoneNumber } from '@/lib/file-system';
+import { sanitizePhoneNumberClient } from '@/lib/utils';
 
 interface ClaudeResponse {
   content?: string;
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       const message = data.payload
       const messageId = message.id
       const fromNumberTelnyx = message.from.phone_number
-      const fromNumberSanitizedToDb = sanitizePhoneNumber(message.from.phone_number)
+      const fromNumberSanitizedToDb = sanitizePhoneNumberClient(message.from.phone_number)
       const messageText = message.text || ''
       const hasMedia = message.media && message.media.length > 0
       

@@ -935,7 +935,7 @@ export default function DashboardPage() {
                           <Label htmlFor="phone">Phone Number</Label>
                           <Input
                             id="phone"
-                            placeholder="+1 (555) 123-4567"
+                            placeholder="Enter your phone number (e.g. +1234567890)"
                             value={inviteData.phone_number}
                             onChange={(e) => setInviteData(prev => ({ ...prev, phone_number: e.target.value }))}
                           />

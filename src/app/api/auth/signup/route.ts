@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/utils/supabase/server';
 import { ROLES } from '@/utils/constants';
+import { sanitizePhoneNumberClient } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
         id: authData.user.id,
         email: authData.user.email!,
         full_name,
-        phone_number,
+        phone_number: sanitizePhoneNumberClient(phone_number),
         role: ROLES.ORG_OWNER
       })
 

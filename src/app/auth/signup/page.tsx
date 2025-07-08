@@ -169,7 +169,7 @@ export default function SignUpPage() {
                     type="tel"
                     value={formData.phone_number}
                     onChange={(e) => handleInputChange('phone_number', e.target.value)}
-                    placeholder="Enter your phone number"
+                    placeholder="Enter your phone number (e.g. +1234567890)"
                   />
                 </div>
 
