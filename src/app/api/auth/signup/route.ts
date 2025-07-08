@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/utils/supabase/server';
+import { ROLES } from '@/utils/constants';
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,7 +74,8 @@ export async function POST(request: NextRequest) {
         id: authData.user.id,
         email: authData.user.email!,
         full_name,
-        phone_number
+        phone_number,
+        role: ROLES.ORG_OWNER
       })
 
     if (profileError) {
@@ -87,7 +89,7 @@ export async function POST(request: NextRequest) {
     // If organization details provided, create organization
     let organizationData = null
     if (organization_name && organization_slug && authData.user) {
-      const { data: orgData, error: orgError } = await supabase.rpc('create_organization_with_owner', {
+      const { data: orgId, error: orgError } = await supabase.rpc('create_organization_with_owner', {
         org_name: organization_name,
         org_slug: organization_slug,
         owner_auth_user_id: authData.user.id
@@ -97,7 +99,17 @@ export async function POST(request: NextRequest) {
         console.error('Error creating organization:', orgError)
         // Don't fail the signup if organization creation fails
       } else {
-        organizationData = orgData
+        // The RPC function now returns the organization_id and updates the users table
+        // We can fetch the organization data if needed
+        const { data: orgData, error: fetchError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', orgId)
+          .single()
+        
+        if (!fetchError && orgData) {
+          organizationData = orgData
+        }
       }
     }
 
