@@ -33,7 +33,8 @@ import {
   User,
   Trash2,
   LogOut,
-  MessageSquare
+  MessageSquare,
+  MapPin
 } from "lucide-react"
 import { useAuth } from '@/context/useAuth'
 import { ROLES } from '@/utils/constants'
@@ -146,7 +147,7 @@ export default function DashboardPage() {
   const [githubConnecting, setGithubConnecting] = useState(false)
   const [syncingRepositories, setSyncingRepositories] = useState(false)
   const [repositoryFilter, setRepositoryFilter] = useState<string>('all')
-  
+
   // Repository assignment states
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null)
@@ -189,7 +190,7 @@ export default function DashboardPage() {
         console.log('❌ Error checking auth:', error)
         // window.location.href = '/auth/signin'
       }
-      if(data) {
+      if (data) {
         console.log('✅ Auth data:', data)
       }
     }
@@ -208,23 +209,23 @@ export default function DashboardPage() {
       try {
         setLoading(true)
         organizationsLoaded.current = true // Mark as loading to prevent duplicates
-        
+
         // Handle URL parameters first
         const urlParams = new URLSearchParams(window.location.search)
         const githubConnected = urlParams.get('github_connected')
         const installationPending = urlParams.get('installation_pending')
         const error = urlParams.get('error')
-        
+
         if (githubConnected === 'true') {
           console.log('✅ GitHub connected successfully')
           window.history.replaceState({}, '', '/dashboard')
         }
-        
+
         if (installationPending === 'true') {
           console.log('⏳ Installation pending - will check for pending installations')
           window.history.replaceState({}, '', '/dashboard')
         }
-        
+
         if (error) {
           setError(getErrorMessage(error))
           window.history.replaceState({}, '', '/dashboard')
@@ -232,7 +233,7 @@ export default function DashboardPage() {
 
         // Load organizations
         await loadOrganizations()
-        
+
       } catch (err) {
         console.error('❌ Dashboard initialization error:', err)
         setError(err instanceof Error ? err.message : 'Failed to initialize dashboard')
@@ -249,7 +250,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (currentOrg && !loading) {
       const orgId = currentOrg.organization.id
-      
+
       // 🛡️ GUARD: Check if we already loaded data for this org
       if (orgDataLoaded.current === orgId) {
         console.log(`⚠️  Data already loaded for org ${currentOrg.organization.name}, skipping...`)
@@ -258,9 +259,9 @@ export default function DashboardPage() {
 
       console.log(`🔄 Organization changed to: ${currentOrg.organization.name}`)
       orgDataLoaded.current = orgId // Mark this org as being loaded
-      
+
       loadOrganizationData()
-      
+
       // Check for pending installations after a short delay. DISABLED, left as docs
       // const timeoutId = setTimeout(() => {
       //   linkPendingInstallations()
@@ -293,10 +294,10 @@ export default function DashboardPage() {
         },
         role: item.role
       }))
-      
+
       console.log(`✅ Loaded ${orgs.length} organizations`)
       setOrganizations(orgs)
-      
+
       if (orgs && orgs.length > 0) {
         setCurrentOrg(orgs[0])
         console.log(`🎯 Set current org to: ${orgs[0].organization.name}`)
@@ -355,7 +356,7 @@ export default function DashboardPage() {
         const repoData = await repoResponse.value.json()
         setRepositories(repoData.repositories || [])
         console.log(`📦 Loaded ${repoData.repositories?.length || 0} repositories`)
-        
+
         // Load assignments for all repositories
         if (repoData.repositories && repoData.repositories.length > 0) {
           loadAllRepositoryAssignments(repoData.repositories)
@@ -375,13 +376,13 @@ export default function DashboardPage() {
   // 🔄 REFRESH: Function to refresh organization data (for manual refreshes)
   const refreshOrganizationData = async () => {
     if (!currentOrg) return
-    
+
     // Reset the loaded flag to allow refresh
     orgDataLoaded.current = null
     await loadOrganizationData()
     // Reset the flag back to current org to prevent duplicates
     orgDataLoaded.current = currentOrg.organization.id
-    
+
     // Refresh assignments after data is reloaded
     if (repositories.length > 0) {
       await loadAllRepositoryAssignments(repositories)
@@ -439,7 +440,7 @@ export default function DashboardPage() {
 
       // Open GitHub App installation page
       window.open(data.installation_url, '_blank')
-      
+
       // Poll for installation completion
       pollForInstallation()
     } catch (err) {
@@ -510,7 +511,7 @@ export default function DashboardPage() {
         const data = await response.json()
         if (data.installations && data.installations.length > 0) {
           console.log('Found pending installations:', data.installations.length)
-          
+
           // Try to link the most recent installation to this organization
           const latestInstallation = data.installations[0]
           const linkResponse = await fetch('/api/github/installations/link', {
@@ -523,7 +524,7 @@ export default function DashboardPage() {
               organization_id: currentOrg.organization.id
             })
           })
-          
+
           if (linkResponse.ok) {
             console.log('Successfully linked pending installation')
             // Reload organization data to show the new installation
@@ -545,7 +546,7 @@ export default function DashboardPage() {
 
     try {
       console.log(`🚀 Starting repository sync for installation ${installationId}`)
-      
+
       const response = await fetch('/api/github/sync-repositories', {
         method: 'POST',
         headers: {
@@ -564,13 +565,13 @@ export default function DashboardPage() {
       }
 
       console.log(`✅ Successfully synced ${data.synced_count} repositories`)
-      
+
       // Reload organization data to show updated repositories
       await refreshOrganizationData()
-      
+
       // Show success message briefly
       setError('')
-      
+
     } catch (err) {
       console.error('❌ Repository sync failed:', err)
       setError(err instanceof Error ? err.message : 'Failed to sync repositories')
@@ -607,13 +608,13 @@ export default function DashboardPage() {
   const loadAllRepositoryAssignments = async (repositories: Repository[]) => {
     try {
       const assignmentMap = new Map<string, RepositoryAssignment[]>()
-      
+
       // Load assignments for all repositories in parallel
       const assignmentPromises = repositories.map(async (repo) => {
         try {
           const response = await fetch(`/api/github/repositories/${repo.id}/assignments`)
           const data = await response.json()
-          
+
           if (response.ok) {
             assignmentMap.set(repo.id, data.assignments || [])
           } else {
@@ -624,10 +625,10 @@ export default function DashboardPage() {
           assignmentMap.set(repo.id, [])
         }
       })
-      
+
       await Promise.all(assignmentPromises)
       setAllRepositoryAssignments(assignmentMap)
-      
+
     } catch (err) {
       console.error('❌ Error loading all repository assignments:', err)
     }
@@ -654,7 +655,7 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Failed to assign user')
       }
 
-      if(!currentOrg) {
+      if (!currentOrg) {
         console.error('❌ No organization found')
         throw new Error('No organization found')
       }
@@ -663,11 +664,11 @@ export default function DashboardPage() {
 
       // Find the assigned user's phone number for cloning
       const assignedUser = clients.find(client => client.id === assignData.client_id)
-      
+
       if (assignedUser && (assignedUser.phone || assignedUser.client_profile?.phone_number)) {
         try {
           console.log(`🚀 Cloning repository ${selectedRepository.name} for user: ${assignedUser.client_profile?.full_name || assignedUser.client_profile?.email}`)
-          
+
           const cloneResponse = await fetch('/api/clone-repository', {
             method: 'POST',
             headers: {
@@ -700,10 +701,10 @@ export default function DashboardPage() {
       // Reset form and reload assignments
       setAssignData({ client_id: '', role: 'developer' })
       await loadRepositoryAssignments(selectedRepository.id)
-      
+
       // Refresh the assignment data for all repositories to update the red highlighting
       await loadAllRepositoryAssignments(repositories)
-      
+
     } catch (err) {
       console.error('❌ Assignment failed:', err)
       setError(err instanceof Error ? err.message : 'Failed to assign user')
@@ -735,10 +736,10 @@ export default function DashboardPage() {
 
       // Reload assignments
       await loadRepositoryAssignments(selectedRepository.id)
-      
+
       // Refresh the assignment data for all repositories to update the red highlighting
       await loadAllRepositoryAssignments(repositories)
-      
+
     } catch (err) {
       console.error('❌ Assignment removal failed:', err)
       setError(err instanceof Error ? err.message : 'Failed to remove assignment')
@@ -771,8 +772,8 @@ export default function DashboardPage() {
   const hasGitHubConnection = githubInstallations.length > 0
 
   // Filter repositories based on selected installation
-  const filteredRepositories = repositoryFilter === 'all' 
-    ? repositories 
+  const filteredRepositories = repositoryFilter === 'all'
+    ? repositories
     : repositories.filter(repo => repo.installation_id.toString() === repositoryFilter)
 
   // Get unique installations for filter options
@@ -831,10 +832,16 @@ export default function DashboardPage() {
                 {currentOrg.role}
               </Badge>
               {(currentOrg.role === ROLES.ORG_ADMIN || currentOrg.role === ROLES.ORG_OWNER) && (
-                <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Web Chat
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard/web-chat'}>
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Web Chat
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.location.href = '/maps-scraper'}>
+                    <MapPin className="h-4 w-4 mr-2" />
+                    Maps Scraper
+                  </Button>
+                </>
               )}
               <Button variant="outline" size="sm" onClick={async () => {
                 await supabase.auth.signOut()
@@ -1058,7 +1065,7 @@ export default function DashboardPage() {
                               <Badge variant="outline">{installation.account_type}</Badge>
                             </div>
                             <p className="text-sm text-gray-600">
-                              {installation.repository_selection} repositories • 
+                              {installation.repository_selection} repositories •
                               Connected {new Date(installation.created_at).toLocaleDateString()}
                             </p>
                             <p className="text-xs text-gray-500">
@@ -1087,7 +1094,7 @@ export default function DashboardPage() {
                             size="sm"
                             asChild
                           >
-                            <a 
+                            <a
                               href={`https://github.com/settings/installations/${installation.installation_id}`}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -1108,7 +1115,7 @@ export default function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                
+
                 ) : (
                   <div className="text-center py-8">
                     <Github className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -1151,8 +1158,8 @@ export default function DashboardPage() {
                     </CardDescription>
                   </div>
                   {githubInstallations.length > 0 && (
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => syncRepositories(githubInstallations[0].installation_id)}
                       disabled={syncingRepositories}
                     >
@@ -1170,7 +1177,7 @@ export default function DashboardPage() {
                     </Button>
                   )}
                 </div>
-                                  {repositories.length > 0 && (
+                {repositories.length > 0 && (
                   <div className="flex items-center space-x-4 pt-4">
                     <Label htmlFor="installation-filter" className="text-sm font-medium">
                       Filter by Installation:
@@ -1241,7 +1248,7 @@ export default function DashboardPage() {
                               <div className="flex items-center space-x-2">
                                 <Github className="h-3 w-3 text-gray-400" />
                                 <span className="text-xs text-gray-500">
-                                  @{repo.installation?.account_login || 'Unknown'} 
+                                  @{repo.installation?.account_login || 'Unknown'}
                                   <span className="ml-1">({repo.installation?.account_type || 'unknown'})</span>
                                 </span>
                               </div>
@@ -1254,8 +1261,8 @@ export default function DashboardPage() {
                                 View on GitHub
                               </a>
                             </Button>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => openAssignmentDialog(repo)}
                             >
@@ -1305,7 +1312,7 @@ export default function DashboardPage() {
                 Assign clients to {selectedRepository?.name} repository
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-6">
               {/* Assign New User */}
               <div className="space-y-4">
@@ -1324,10 +1331,10 @@ export default function DashboardPage() {
                         {clients
                           .filter(client => client.phone && !repositoryAssignments.some(assignment => assignment.user.phone === client.phone))
                           .map((client) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.client_profile?.full_name || client.client_profile?.email || client.phone || 'Unknown'}
-                          </SelectItem>
-                        ))}
+                            <SelectItem key={client.id} value={client.id}>
+                              {client.client_profile?.full_name || client.client_profile?.email || client.phone || 'Unknown'}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1348,8 +1355,8 @@ export default function DashboardPage() {
                     </Select>
                   </div>
                   <div className="flex items-end">
-                    <Button 
-                      onClick={handleAssignUser} 
+                    <Button
+                      onClick={handleAssignUser}
                       disabled={assignmentLoading || !assignData.client_id}
                       className="w-full"
                     >

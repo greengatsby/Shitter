@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Users, Github, Phone, Shield, Zap, ArrowRight, Check } from "lucide-react";
+import { Building2, Users, Github, Phone, Shield, Zap, ArrowRight, Check, MapPin } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -132,6 +132,26 @@ export default function LandingPage() {
                 Get started in minutes with our streamlined onboarding process and intuitive interface.
               </CardDescription>
             </CardHeader>
+          </Card>
+
+          <Card className="border-0 shadow-lg">
+            <CardHeader>
+              <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
+                <MapPin className="h-6 w-6 text-indigo-600" />
+              </div>
+              <CardTitle>Google Maps Scraper</CardTitle>
+              <CardDescription>
+                Generate PhantomBuster CSV files or directly scrape Google Maps data with customizable coordinate grids and location density controls.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild size="sm" className="w-full">
+                <Link href="/maps-scraper">
+                  Try Maps Scraper
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
           </Card>
         </div>
       </section>
